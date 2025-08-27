@@ -64,8 +64,8 @@ fit_rob_nb_univariate <- function(y, c.tukey.beta=10, c.tukey.sigma=10, minsig=1
   #-------------------------------------------------------------------
   # MLEs of both sigma and beta
   #-------------------------------------------------------------------
-  theta.mle <- MASS::glm.nb(formula = y ~ 1)
-  sigma <- theta.mle$coef[1]
+  fit <- MASS::glm.nb(formula = y ~ 1)
+  sigma <- 1/fit$theta
   mu <- exp(theta.mle$coefficients[[1]])
   eta <- link(mu)
   update.sigma <- T # at least 1 iteration of robust est, worst case = does not move from minsig/maxsig
@@ -113,4 +113,9 @@ fit_rob_nb_univariate <- function(y, c.tukey.beta=10, c.tukey.sigma=10, minsig=1
   theta.est <- c(mu = exp(beta11), theta = 1/sigma)
 
   return(theta.est)
+}
+
+fit_nb_univariate <- function(y) {
+  fit <- MASS::glm.nb(formula = y ~ 1)
+  c(mu = exp(fit$coef[[1]]), theta = fit$theta)
 }

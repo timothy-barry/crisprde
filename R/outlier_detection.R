@@ -1,8 +1,18 @@
 #' Find GUIDE-seq edit sites
 #'
-#' @param umi_df
+#' TO DO:
+#' 1. optimize c_tukey_beta and c_tukey_sigma for our setting
+#' 2. consider binning-free approaches
+#' 3. Multiple samples and covariates
+#'
 #' @param c_tukey_beta
 #' @param c_tukey_sigma
+#' @param count_df
+#' @param window_size
+#' @param p_val_calculation_method
+#' @param multiplicity_adjustment
+#' @param multiplicity_adjustment_threshold
+#' @param chrs_to_keep
 #'
 #' @returns
 #' @export
@@ -10,7 +20,13 @@
 #' @examples
 #' umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds"
 #' count_df <- readRDS(umi_tab_fp)
-find_guideseq_edit_sites <- function(count_df, window_size = 1000,  p_val_calculation_method = "exact", multiplicity_adjustment = "BH",
+#' res_cntrl <- find_guideseq_edit_sites(count_df)
+#'
+#' umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds"
+#' count_df <- readRDS(umi_tab_fp)
+#' res_trt <- find_guideseq_edit_sites(count_df)
+#'
+find_guideseq_edit_sites <- function(count_df, window_size = 1000, p_val_calculation_method = "exact", multiplicity_adjustment = "BH", robust_mle = TRUE,
                                      multiplicity_adjustment_threshold = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10, chrs_to_keep = seq(1L, 22L)) {
   # 1. subset count_df, keeping only chromosomes in chrs_to_keep
   count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep)
@@ -50,7 +66,11 @@ find_guideseq_edit_sites <- function(count_df, window_size = 1000,  p_val_calcul
 
   # 3. shift v, then fit the robust m-estimator
   y <- v - 1L
-  fit <- fit_rob_nb_univariate(y = y)
+  if (robust_mle) {
+    fit <- fit_rob_nb_univariate(y = y, c.tukey.beta = c_tukey_beta, c.tukey.sigma = c_tukey_sigma)
+  } else {
+    fit <- fit_nb_univariate(y = y)
+  }
   mu_hat <- fit[["mu"]]
   theta_hat <- fit[["theta"]]
 
@@ -67,15 +87,19 @@ find_guideseq_edit_sites <- function(count_df, window_size = 1000,  p_val_calcul
   p_adj <- p.adjust(p = p_vals, method = multiplicity_adjustment)
   rejected <- p_adj < multiplicity_adjustment_threshold
 
-  # 6. prepare output
-  out_df <- data.frame(chr = gr_bins_sub@seqnames,
-                       range_start = gr_bins_sub@ranges@start,
-                       range_end = gr_bins_sub@ranges@start + gr_bins_sub@ranges@width,
-                       umi_count = gr_bins_sub$read_sum, p_adj = p_adj, significant_hit = rejected)
+  # 6. prepare result df
+  result_df <- data.frame(chr = gr_bins_sub@seqnames,
+                          range_start = gr_bins_sub@ranges@start,
+                          range_end = gr_bins_sub@ranges@start + gr_bins_sub@ranges@width,
+                          umi_count = gr_bins_sub$read_sum, p_value = p_vals,
+                          p_adj = p_adj, significant_hit = rejected)
 
-  return(out_df)
+  # 7. create plot
+
+
+  # 8. prepare output
+  out <- list(result_df = result_df, fit = fit)
 }
-
 
 compute_exact_p_value <- function(mu, theta, y) {
   p_vals <- stats::pnbinom(q = y - 1, size = theta, mu = mu, lower.tail = FALSE)
@@ -86,4 +110,36 @@ compute_lrt_p_value <- function(mu, theta, y) {
   xi_squared <- 2 * (dnbinom(x = y, size = theta, mu = y, log = TRUE) - dnbinom(x = y, size = theta, mu = mu, log = TRUE))
   p_vals <- ifelse(y <= mu, 1, 0.5 * pchisq(xi_squared, df = 1, lower.tail = FALSE))
   return(p_vals)
+}
+
+make_plot <- function(y, fit, result_df) {
+  # compute fitted density
+  x_range <- seq(0, max(y))
+  shifted_nb_df <- data.frame(
+    count = x_range,
+    expected = dnbinom(x = x_range, size = fit[["theta"]], mu = fit[["mu"]]) * length(y)
+  )
+
+  # shift
+  x_range <- x_range + 1
+  y <- y + 1
+  shifted_nb_df$count <- shifted_nb_df$count + 1
+
+  # plot
+  p_model_untrans <- ggplot2::ggplot(data = data.frame(y = y), mapping = ggplot2::aes(x = y)) +
+    ggplot2::geom_histogram(binwidth = 1, col = "black", fill = "white") +
+    ggplot2::theme_bw() +
+    ggplot2::geom_line(
+      data = shifted_nb_df,
+      ggplot2::aes(x = count, y = expected),
+      linewidth = 0.9,
+      color = "firebrick"
+    ) + ggplot2::ylab("Frequency")
+
+  p_model_trans <- p_model_untrans + ggplot2::scale_y_continuous(transform = scales::pseudo_log_trans(), breaks = c(0, 10^seq(0, 5)))
+  p_model_untrans <- p_model_untrans
+  p_model_trans <- p_model_trans
+
+  p_all <- cowplot::plot_grid(p_model_untrans, p_model_trans, nrow = 1)
+  p_all
 }
