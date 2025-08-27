@@ -66,7 +66,7 @@ fit_rob_nb_univariate <- function(y, c.tukey.beta=10, c.tukey.sigma=10, minsig=1
   #-------------------------------------------------------------------
   fit <- MASS::glm.nb(formula = y ~ 1)
   sigma <- 1/fit$theta
-  mu <- exp(theta.mle$coefficients[[1]])
+  mu <- exp(fit$coefficients[[1]])
   eta <- link(mu)
   update.sigma <- T # at least 1 iteration of robust est, worst case = does not move from minsig/maxsig
   #-------------------------------------------------------------------

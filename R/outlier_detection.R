@@ -11,7 +11,7 @@
 #' @param window_size
 #' @param p_val_calculation_method
 #' @param multiplicity_adjustment
-#' @param multiplicity_adjustment_threshold
+#' @param multiplicity_alpha
 #' @param chrs_to_keep
 #'
 #' @returns
@@ -26,8 +26,9 @@
 #' count_df <- readRDS(umi_tab_fp)
 #' res_trt <- find_guideseq_edit_sites(count_df)
 #'
-find_guideseq_edit_sites <- function(count_df, window_size = 1000, p_val_calculation_method = "exact", multiplicity_adjustment = "BH", robust_mle = TRUE,
-                                     multiplicity_adjustment_threshold = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10, chrs_to_keep = seq(1L, 22L)) {
+find_guideseq_edit_sites <- function(count_df, window_size = 1000, multiplicity_adjustment = "BH", model = "nb",
+                                     robust_mle = TRUE, multiplicity_alpha = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10,
+                                     chrs_to_keep = seq(1L, 22L)) {
   # 1. subset count_df, keeping only chromosomes in chrs_to_keep
   count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep)
 
@@ -56,7 +57,7 @@ find_guideseq_edit_sites <- function(count_df, window_size = 1000, p_val_calcula
 
   # 2.c count overlaps between gr_bins and gr to get count distribution
   hits <- GenomicRanges::findOverlaps(gr_bins, gr_reads)
-  count_vec <- tapply(mcols(gr_reads)$count[subjectHits(hits)], S4Vectors::queryHits(hits), sum)
+  count_vec <- tapply(GenomicRanges::mcols(gr_reads)$count[S4Vectors::subjectHits(hits)], S4Vectors::queryHits(hits), sum)
   gr_bins$read_sum <- 0
   gr_bins$read_sum[as.integer(names(count_vec))] <- count_vec
 
@@ -64,28 +65,33 @@ find_guideseq_edit_sites <- function(count_df, window_size = 1000, p_val_calcula
   gr_bins_sub <- gr_bins[gr_bins$read_sum >= 1]
   v <- gr_bins_sub$read_sum
 
-  # 3. shift v, then fit the robust m-estimator
+  # 3. shift v, then fit the model
   y <- v - 1L
-  if (robust_mle) {
+  if (robust_mle && model == "nb") {
     fit <- fit_rob_nb_univariate(y = y, c.tukey.beta = c_tukey_beta, c.tukey.sigma = c_tukey_sigma)
-  } else {
+    theta_hat <- fit[["theta"]]
+  } else if (!robust_mle && model == "nb") {
     fit <- fit_nb_univariate(y = y)
+    theta_hat <- fit[["theta"]]
+  } else if (!robust_mle && model == "poisson") {
+      fit <- list(mu = mean(y))
+  } else {
+    stop("Model not recognized.")
   }
   mu_hat <- fit[["mu"]]
-  theta_hat <- fit[["theta"]]
 
   # 4. compute p-value for each observation
-  if (p_val_calculation_method == "exact") {
-    p_vals <- compute_exact_p_value(mu_hat, theta_hat, y)
-  } else if (p_val_calculation_method == "lrt") {
-    p_vals <- compute_lrt_p_value(mu_hat, theta_hat, y)
+  if (model == "nb") {
+    p_vals <- compute_exact_p_value_nb(mu_hat, theta_hat, y)
+  } else if (model == "poisson") {
+    p_vals <- compute_exact_p_value_poisson(mu_hat, y)
   } else {
-    stop("`p_val_calculation_method` not recognized.")
+    stop("Model not recognized.")
   }
 
   # 5. apply multiplicity adjustment
   p_adj <- p.adjust(p = p_vals, method = multiplicity_adjustment)
-  rejected <- p_adj < multiplicity_adjustment_threshold
+  rejected <- (p_adj < multiplicity_alpha)
 
   # 6. prepare result df
   result_df <- data.frame(chr = gr_bins_sub@seqnames,
@@ -95,51 +101,27 @@ find_guideseq_edit_sites <- function(count_df, window_size = 1000, p_val_calcula
                           p_adj = p_adj, significant_hit = rejected)
 
   # 7. create plot
-
+  plot_list <- make_histogram_plot(y, fit, result_df, model)
 
   # 8. prepare output
-  out <- list(result_df = result_df, fit = fit)
+  out <- list(result_df = result_df, fitted_model = fit,
+              plot_untrans = plot_list$plot_untrans,
+              plot_trans = plot_list$plot_trans)
+  return(out)
 }
 
-compute_exact_p_value <- function(mu, theta, y) {
+compute_exact_p_value_poisson <- function(mu, y) {
+  p_vals <- stats::ppois(q = y - 1, lambda = mu, lower.tail = FALSE)
+  return(p_vals)
+}
+
+compute_exact_p_value_nb <- function(mu, theta, y) {
   p_vals <- stats::pnbinom(q = y - 1, size = theta, mu = mu, lower.tail = FALSE)
   return(p_vals)
 }
 
-compute_lrt_p_value <- function(mu, theta, y) {
+compute_lrt_p_value_nb <- function(mu, theta, y) {
   xi_squared <- 2 * (dnbinom(x = y, size = theta, mu = y, log = TRUE) - dnbinom(x = y, size = theta, mu = mu, log = TRUE))
   p_vals <- ifelse(y <= mu, 1, 0.5 * pchisq(xi_squared, df = 1, lower.tail = FALSE))
   return(p_vals)
-}
-
-make_plot <- function(y, fit, result_df) {
-  # compute fitted density
-  x_range <- seq(0, max(y))
-  shifted_nb_df <- data.frame(
-    count = x_range,
-    expected = dnbinom(x = x_range, size = fit[["theta"]], mu = fit[["mu"]]) * length(y)
-  )
-
-  # shift
-  x_range <- x_range + 1
-  y <- y + 1
-  shifted_nb_df$count <- shifted_nb_df$count + 1
-
-  # plot
-  p_model_untrans <- ggplot2::ggplot(data = data.frame(y = y), mapping = ggplot2::aes(x = y)) +
-    ggplot2::geom_histogram(binwidth = 1, col = "black", fill = "white") +
-    ggplot2::theme_bw() +
-    ggplot2::geom_line(
-      data = shifted_nb_df,
-      ggplot2::aes(x = count, y = expected),
-      linewidth = 0.9,
-      color = "firebrick"
-    ) + ggplot2::ylab("Frequency")
-
-  p_model_trans <- p_model_untrans + ggplot2::scale_y_continuous(transform = scales::pseudo_log_trans(), breaks = c(0, 10^seq(0, 5)))
-  p_model_untrans <- p_model_untrans
-  p_model_trans <- p_model_trans
-
-  p_all <- cowplot::plot_grid(p_model_untrans, p_model_trans, nrow = 1)
-  p_all
 }
