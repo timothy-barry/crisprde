@@ -1,3 +1,65 @@
+make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log_trans = FALSE,
+                             col = c("dodgerblue3", "firebrick")[1], title = NULL) {
+  # base plot
+  p <- ggplot2::ggplot(data = count_df, mapping = ggplot2::aes(x = coord, y = count)) +
+    ggplot2::geom_segment(ggplot2::aes(x = coord, xend = coord, y = 1, yend = count)) +
+    ggplot2::geom_point(size = 0.7, col = col) +
+    ggplot2::theme_bw(base_size = 10) + ggplot2::xlab("Coordinate")
+
+  # facet?
+  if (facet_on_chr) {
+    p <- p + ggplot2::facet_wrap("chr") + ggplot2::theme(axis.text.x = ggplot2::element_blank(),
+                                                         axis.ticks.x = ggplot2::element_blank())
+  }
+  # log transform?
+  if (log_trans) {
+    p <- p + ggplot2::scale_y_continuous(trans = scales::log10_trans()) + ggplot2::ylab("UMI count (linear)")
+  } else {
+    p <- p + ggplot2::ylab("UMI count (log)")
+  }
+  # custom x-range?
+  if (!is.null(x_range)) {
+    p <- p + ggplot2::xlim(x_range)
+  }
+  if (!is.null(title)) {
+    p <- p + ggplot2::ggtitle(title)
+  }
+
+  return(p)
+}
+
+make_discovery_site_scatterplots <- function(count_df, result_df, plot_window_size = 50, col = c("dodgerblue3", "firebrick")[1]) {
+  # find the significant discoveries
+  result_df_sig <- result_df |> dplyr::filter(significant_hit)
+  if (nrow(result_df_sig) >= 1) {
+    plot_list <- lapply(seq(1, nrow(result_df_sig)), function(i) {
+      curr_lead_base <- result_df_sig$lead_base[i]
+      curr_chr <- as.character(result_df_sig$chr[i])
+      count_df_sub <- count_df |>
+        dplyr::mutate(coord = coord - curr_lead_base) |>
+        dplyr::filter(coord >= -plot_window_size/2 & coord <= plot_window_size/2 & chr == curr_chr)
+      p_log <- make_scatterplot(count_df = count_df_sub,
+                                x_range = c(-plot_window_size/2, plot_window_size/2),
+                                facet_on_chr = FALSE, log_trans = TRUE, col = col,
+                                title = paste0("Chr", curr_chr, ":", curr_lead_base))
+      p_linear <- make_scatterplot(count_df = count_df_sub,
+                                   x_range = c(-plot_window_size/2, plot_window_size/2),
+                                   facet_on_chr = FALSE, log_trans = FALSE, col = col,
+                                   title = paste0("Chr", curr_chr, ":", curr_lead_base))
+      list(p_log = p_log, p_linear = p_linear)
+    })
+    lead_base_names <- paste0("Chr", result_df_sig$chr, ":", result_df_sig$lead_base)
+    log_plots <- lapply(X = plot_list, FUN = function(l) l[["p_log"]]) |> setNames(lead_base_names)
+    linear_plots <- lapply(X = plot_list, FUN = function(l) l[["p_log"]]) |> setNames(lead_base_names)
+    out <- list(log_plots = log_plots, linear_plots = linear_plots)
+  } else {
+    out <- list()
+  }
+
+  return(out)
+}
+
+
 make_histogram_plot <- function(y, fit, result_df, model) {
   # compute fitted density
   x_range <- seq(0, max(y))
