@@ -13,13 +13,14 @@ make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log
   }
   # log transform?
   if (log_trans) {
-    p <- p + ggplot2::scale_y_continuous(trans = scales::log10_trans()) + ggplot2::ylab("UMI count (linear)")
+    p <- p + ggplot2::scale_y_continuous(trans = scales::log10_trans()) +
+      ggplot2::ylab("UMI count (log)")
   } else {
-    p <- p + ggplot2::ylab("UMI count (log)")
+    p <- p + ggplot2::ylab("UMI count (linear)")
   }
   # custom x-range?
   if (!is.null(x_range)) {
-    p <- p + ggplot2::xlim(x_range)
+    suppressMessages(p <- p + ggplot2::xlim(x_range) + ggplot2::scale_x_continuous(breaks = seq(x_range[1], x_range[2], by = 1)))
   }
   if (!is.null(title)) {
     p <- p + ggplot2::ggtitle(title)
@@ -28,7 +29,7 @@ make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log
   return(p)
 }
 
-make_discovery_site_scatterplots <- function(count_df, result_df, plot_window_size = 50, col = c("dodgerblue3", "firebrick")[1]) {
+make_discovery_site_scatterplots <- function(count_df, result_df, plot_window_size = 30, col = c("dodgerblue3", "firebrick")[1]) {
   # find the significant discoveries
   result_df_sig <- result_df |> dplyr::filter(significant_hit)
   if (nrow(result_df_sig) >= 1) {
@@ -50,7 +51,7 @@ make_discovery_site_scatterplots <- function(count_df, result_df, plot_window_si
     })
     lead_base_names <- paste0("Chr", result_df_sig$chr, ":", result_df_sig$lead_base)
     log_plots <- lapply(X = plot_list, FUN = function(l) l[["p_log"]]) |> setNames(lead_base_names)
-    linear_plots <- lapply(X = plot_list, FUN = function(l) l[["p_log"]]) |> setNames(lead_base_names)
+    linear_plots <- lapply(X = plot_list, FUN = function(l) l[["p_linear"]]) |> setNames(lead_base_names)
     out <- list(log_plots = log_plots, linear_plots = linear_plots)
   } else {
     out <- list()

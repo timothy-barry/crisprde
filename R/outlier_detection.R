@@ -73,17 +73,16 @@ find_guideseq_edit_sites <- function(count_df, window_size = 1000, multiplicity_
                           range_end = gr_bins_sub@ranges@start + gr_bins_sub@ranges@width,
                           umi_count = gr_bins_sub$read_sum, p_value = p_vals,
                           p_adj = p_adj, significant_hit = rejected)
-  lead_bases <- get_lead_base(result_df = result_df, count_df = count_df)
-  result_df$lead_base <- lead_bases
+  result_df <- append_lead_base(result_df = result_df, count_df = count_df)
 
   # 7. create plots
   # a. histogram plots
   histogram_plot_list <- make_histogram_plot(y, fit, result_df, model)
   # b. global scatterplot
   global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
-                                                facet_on_chr = TRUE, log_trans = FALSE)
+                                                facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
   global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
-                                             facet_on_chr = TRUE, log_trans = TRUE)
+                                             facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
   # c. zoomed-in scatter plots on discovery sites
   zoomed_plots <- make_discovery_site_scatterplots(count_df = count_df, result_df = result_df, col = plot_col)
 
@@ -146,15 +145,19 @@ compute_lrt_p_value_nb <- function(mu, theta, y) {
   return(p_vals)
 }
 
-get_lead_base <- function(result_df, count_df) {
-  lead_coords <- sapply(X = seq(1L, nrow(result_df)), FUN = function(i) {
-    curr_chr <- as.character(result_df$chr[i])
-    curr_range_start <- result_df$range_start[i]
-    curr_range_end <- result_df$range_end[i]
+append_lead_base <- function(result_df, count_df) {
+  result_df_arranged <- result_df |> dplyr::arrange(p_value)
+  result_df_signif <- result_df_arranged |> dplyr::filter(significant_hit)
+  lead_coords <- sapply(X = seq(1L, nrow(result_df_signif)), FUN = function(i) {
+    curr_chr <- as.character(result_df_signif$chr[i])
+    curr_range_start <- result_df_signif$range_start[i]
+    curr_range_end <- result_df_signif$range_end[i]
     count_df_sub <- count_df |>
       dplyr::filter(chr == curr_chr & coord >= curr_range_start & coord <= curr_range_end)
     lead_base <- count_df_sub$coord[which.max(count_df_sub$count)]
     lead_base
   })
-  return(lead_coords)
+  lead_coords <- c(lead_coords, rep(NA, nrow(result_df_arranged) - nrow(result_df_signif)))
+  result_df_arranged$lead_base <- lead_coords
+  return(result_df_arranged)
 }
