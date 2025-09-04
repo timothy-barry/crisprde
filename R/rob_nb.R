@@ -137,5 +137,4 @@ fit_rob_zinf_nb_univariate <- function(y, c.tukey.beta = 10, c.tukey.sigma = 10,
   n_nb <- n_nonzero/(1 - p_nb_zero)
   n_zero_component <- n - n_nb
   pi_hat <- n_zero_component/n
-
 }
