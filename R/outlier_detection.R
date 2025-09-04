@@ -73,7 +73,9 @@ find_guideseq_edit_sites <- function(count_df, window_size = 1000, multiplicity_
                           range_end = gr_bins_sub@ranges@start + gr_bins_sub@ranges@width,
                           umi_count = gr_bins_sub$read_sum, p_value = p_vals,
                           p_adj = p_adj, significant_hit = rejected)
-  result_df <- append_lead_base(result_df = result_df, count_df = count_df)
+  if (sum(result_df$significant_hit) >= 1) {
+    result_df <- append_lead_base(result_df = result_df, count_df = count_df)
+  }
 
   # 7. create plots
   # a. histogram plots

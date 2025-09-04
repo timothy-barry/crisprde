@@ -59,7 +59,7 @@ sig.rob.tukey <- function(sigma,y,mu,c.tukey,weights){
 ############
 # UNIVARIATE
 ############
-fit_rob_nb_univariate <- function(y, weights = rep(1, length(y)), c.tukey.beta=10, c.tukey.sigma=10, minsig=1e-3, maxsig=50, minmu=1e-10, maxmu=1e20, maxit=50, tol=1e-5, maxit.sig=30, tol.sig=1e-6, warn=FALSE){
+fit_rob_nb_univariate <- function(y, weights = rep(1, length(y)), c.tukey.beta=10, c.tukey.sigma=10, minsig=1e-3, maxsig=50, minmu=1e-10, maxmu=1e20, maxit=50, tol=1e-5, maxit.sig=30, tol.sig=1e-6, warn=FALSE) {
   n <- length(y)
   #-------------------------------------------------------------------
   # MLEs of both sigma and beta
@@ -118,4 +118,24 @@ fit_rob_nb_univariate <- function(y, weights = rep(1, length(y)), c.tukey.beta=1
 fit_nb_univariate <- function(y) {
   fit <- MASS::glm.nb(formula = y ~ 1)
   c(mu = exp(fit$coef[[1]]), theta = fit$theta)
+}
+
+###############
+# ZERO-INFLATED
+###############
+fit_rob_zinf_nb_univariate <- function(y, c.tukey.beta = 10, c.tukey.sigma = 10, maxit = 100, tol = 1e-6) {
+  n <- length(y)
+  is_0 <- y == 0
+  one_vect <- rep(1, n)
+
+  # pilot estimate: fit hurdle model and back-calculate pi
+  fit_hurdle <- pscl::hurdle(formula = y ~ 1, dist = "negbin")
+  mu_pilot <- exp(fit_hurdle$coefficients$count[[1]])
+  theta_pilot <- fit_hurdle$theta[[1]]
+  p_nb_zero <- dnbinom(x = 0, size = theta_pilot, mu = mu_pilot)
+  n_nonzero <- sum(y != 0)
+  n_nb <- n_nonzero/(1 - p_nb_zero)
+  n_zero_component <- n - n_nb
+  pi_hat <- n_zero_component/n
+
 }
