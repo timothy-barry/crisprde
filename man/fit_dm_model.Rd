@@ -25,5 +25,4 @@ fit <- fit_dm_model(X)
 pi_hat <- fit$pi
 theta_hat <- fit$theta
 p_vals <- compute_lrt_p_vals(X = X, pi = pi_hat, theta = theta_hat)
-p_vals <- compute_lrt_p_vals_v2(X = X, pi = pi_hat, theta = theta_hat)
 }
