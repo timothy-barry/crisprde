@@ -10,7 +10,8 @@ find_guideseq_edit_sites_dm_sliding_window(
   multiplicity_adjustment = "BH",
   multiplicity_alpha = 0.1,
   chrs_to_keep = seq(1L, 22L),
-  fit = NULL
+  fit = NULL,
+  plot_col = c("dodgerblue3", "firebrick")[1]
 )
 }
 \arguments{
@@ -20,7 +21,11 @@ find_guideseq_edit_sites_dm_sliding_window(
 Find GUIDE-seq edit sites DM
 }
 \examples{
-umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds"
+umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds"
 count_df <- readRDS(umi_tab_fp)
 res <- find_guideseq_edit_sites_dm_sliding_window(count_df)
+
+umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds"
+count_df <- readRDS(umi_tab_fp)
+res_trt <- find_guideseq_edit_sites(count_df)
 }

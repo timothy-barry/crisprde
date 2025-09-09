@@ -13,8 +13,13 @@
 #' umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds"
 #' count_df <- readRDS(umi_tab_fp)
 #' res <- find_guideseq_edit_sites_dm_sliding_window(count_df)
+#'
+#' umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds"
+#' count_df <- readRDS(umi_tab_fp)
+#' res_trt <- find_guideseq_edit_sites(count_df)
 find_guideseq_edit_sites_dm_sliding_window <- function(count_df, window_size = 25, multiplicity_adjustment = "BH",
-                                                       multiplicity_alpha = 0.1, chrs_to_keep = seq(1L, 22L), fit = NULL, plot_col = c("dodgerblue3", "firebrick")[1]) {
+                                                       multiplicity_alpha = 0.1, chrs_to_keep = seq(1L, 22L), fit = NULL,
+                                                       plot_col = c("dodgerblue3", "firebrick")[1]) {
   count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep) |> dplyr::ungroup()
   n_loci <- nrow(count_df)
   # obtain X matrix
@@ -51,22 +56,27 @@ find_guideseq_edit_sites_dm_sliding_window <- function(count_df, window_size = 2
   clustered_res_df <- res_df |>
     dplyr::group_by(group_id) |>
     dplyr::summarize(p_combined = combine_p_values_simes(p_value))
-  clustered_res_df$significant_hit <- p.adjust(p = clustered_res$p_combined, method = "BH") < 0.1
+  clustered_res_df$significant_hit <- p.adjust(p = clustered_res_df$p_combined, method = "BH") < 0.1
 
   # make plots
   # 1. manhattan plot
   manhattan_plot <- make_manhattan_plot(res_df)
   # 2. p-value histogram
-  p_value_histogram <- make_p_value_histogram(clustered_res)
+  p_value_histogram <- make_p_value_histogram(clustered_res_df)
   # 3. global scatterplots
   global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
                                                 facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
   global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
                                              facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
   # 4. zoomed in plots of significant sites
-  zoomed_plots <- make_discovery_site_scatterplots_dm(res_df, clustered_res_df)
+  zoomed_plots <- make_discovery_site_scatterplots_dm(res_df, clustered_res_df, col = plot_col)
 
-  out <- list(res_df = res_df, clustered_res_df = clustered_res_df, count_matrix = X, fit = fit)
+  out <- list(res_df = res_df, clustered_res_df = clustered_res_df,
+              count_matrix = X, fit = fit, manhattan_plot = manhattan_plot,
+              p_value_histogram = p_value_histogram,
+              global_scatterplot_linear = global_scatterplot_linear,
+              global_scatterplot_log = global_scatterplot_log,
+              zoomed_plots = zoomed_plots)
   return(out)
 }
 

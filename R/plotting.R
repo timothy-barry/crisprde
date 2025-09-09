@@ -129,30 +129,34 @@ make_p_value_histogram <- function(clustered_res) {
   return(p_model_untrans)
 }
 
-make_discovery_site_scatterplots_dm <- function(res_df, clustered_res_df, plot_window_size = 24) {
+make_discovery_site_scatterplots_dm <- function(res_df, clustered_res_df, plot_window_size = 24, col = c("dodgerblue3", "firebrick")[1]) {
   signif_group_ids <- clustered_res_df |> dplyr::filter(significant_hit) |> dplyr::pull(group_id)
-  # loop through significant group ids
-  plot_list <- lapply(signif_group_ids, function(curr_group_id) {
-    curr_res_sub <- res_df |> dplyr::filter(group_id == curr_group_id)
-    curr_lead_base <- curr_res_sub$coord[which.max(curr_res_sub$count)]
-    curr_chr <- curr_res_sub$chr[which.max(curr_res_sub$chr)]
-    count_df_sub <- res_df |>
-      dplyr::mutate(coord = coord - curr_lead_base) |>
-      dplyr::filter(coord >= -plot_window_size/2 & coord <= plot_window_size/2 & chr == curr_chr) |>
-      dplyr::select(chr, coord, count)
-    plot_title <- paste0("Chr", curr_chr, ":", curr_lead_base)
-    p_log <- make_scatterplot(count_df = count_df_sub,
-                              x_range = c(-plot_window_size/2, plot_window_size/2),
-                              facet_on_chr = FALSE, log_trans = TRUE, col = col,
-                              title = plot_title)
-    p_linear <- make_scatterplot(count_df = count_df_sub,
-                                 x_range = c(-plot_window_size/2, plot_window_size/2),
-                                 facet_on_chr = FALSE, log_trans = FALSE, col = col,
-                                 title = plot_title)
-    list(p_log = p_log, p_linear = p_linear)
-  })
-  log_plots <- lapply(X = plot_list, FUN = function(l) l[["p_log"]]) |> setNames(paste0("group:", signif_group_ids))
-  linear_plots <- lapply(X = plot_list, FUN = function(l) l[["p_linear"]]) |> setNames(paste0("group:", signif_group_ids))
-  out <- list(log_plots = log_plots, linear_plots = linear_plots)
+  if (length(signif_group_ids) >= 1) {
+    # loop through significant group ids
+    plot_list <- lapply(signif_group_ids, function(curr_group_id) {
+      curr_res_sub <- res_df |> dplyr::filter(group_id == curr_group_id)
+      curr_lead_base <- curr_res_sub$coord[which.max(curr_res_sub$count)]
+      curr_chr <- curr_res_sub$chr[which.max(curr_res_sub$chr)]
+      count_df_sub <- res_df |>
+        dplyr::mutate(coord = coord - curr_lead_base) |>
+        dplyr::filter(coord >= -plot_window_size/2 & coord <= plot_window_size/2 & chr == curr_chr) |>
+        dplyr::select(chr, coord, count)
+      plot_title <- paste0("Chr", curr_chr, ":", curr_lead_base)
+      p_log <- make_scatterplot(count_df = count_df_sub,
+                                x_range = c(-plot_window_size/2, plot_window_size/2),
+                                facet_on_chr = FALSE, log_trans = TRUE, col = col,
+                                title = plot_title)
+      p_linear <- make_scatterplot(count_df = count_df_sub,
+                                   x_range = c(-plot_window_size/2, plot_window_size/2),
+                                   facet_on_chr = FALSE, log_trans = FALSE, col = col,
+                                   title = plot_title)
+      list(p_log = p_log, p_linear = p_linear)
+    })
+    log_plots <- lapply(X = plot_list, FUN = function(l) l[["p_log"]]) |> setNames(paste0("group:", signif_group_ids))
+    linear_plots <- lapply(X = plot_list, FUN = function(l) l[["p_linear"]]) |> setNames(paste0("group:", signif_group_ids))
+    out <- list(log_plots = log_plots, linear_plots = linear_plots)
+  } else {
+    out <- list()
+  }
   return(out)
 }
