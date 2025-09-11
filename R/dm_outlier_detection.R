@@ -17,29 +17,36 @@
 #' umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds"
 #' count_df <- readRDS(umi_tab_fp)
 #' res_trt <- find_guideseq_edit_sites_dm_sliding_window(count_df)
+#'
+#' umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/CD34-WT-Cas9-ELANE-e1SD-GSPneg-5uM-S88_S96_L001_count_table.rds"
+#' count_df <- readRDS(umi_tab_fp)
+#' res_trt <- find_guideseq_edit_sites_dm_sliding_window(count_df)
 find_guideseq_edit_sites_dm_sliding_window <- function(count_df, window_size = 25, multiplicity_adjustment = "BH",
                                                        multiplicity_alpha = 0.1, chrs_to_keep = seq(1L, 22L), fit = NULL,
                                                        plot_col = c("dodgerblue3", "firebrick")[1]) {
   count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep) |> dplyr::ungroup()
   n_loci <- nrow(count_df)
-  # obtain X matrix
-  X <- sapply(X = seq(1, n_loci), FUN = function(i) {
-    curr_row <- count_df[i,]
-    curr_coord <- curr_row$coord
-    curr_chr <- curr_row$chr
-    curr_count <- curr_row$count
-    # subset count df to current chromosome
-    offset <- (window_size - 3)/2
-    count_df_chr_sub <- count_df |> dplyr::filter(chr == curr_chr)
-    k_0 <- curr_count
-    k_minus_1 <- count_df_chr_sub |> dplyr::filter(coord == (curr_coord - 1)) |> dplyr::pull(count) |> sum()
-    k_plus_1 <- count_df_chr_sub |> dplyr::filter(coord == (curr_coord + 1)) |> dplyr::pull(count) |> sum()
-    k_minus_2 <- count_df_chr_sub |> dplyr::filter(coord <= (curr_coord - 2),
-                                                   coord >= (curr_coord - offset)) |> dplyr::pull(count) |> sum()
-    k_plus_2 <- count_df_chr_sub |> dplyr::filter(coord >= (curr_coord + 2),
-                                                  coord <= (curr_coord + offset)) |> dplyr::pull(count) |> sum()
-    c(k_minus_2, k_minus_1, k_0, k_plus_1, k_plus_2)
-  }) |> t()
+
+  if (TRUE) { # original
+    # obtain X matrix
+    X <- sapply(X = seq(1, n_loci), FUN = function(i) {
+      curr_row <- count_df[i,]
+      curr_coord <- curr_row$coord
+      curr_chr <- curr_row$chr
+      curr_count <- curr_row$count
+      # subset count df to current chromosome
+      offset <- (window_size - 3)/2
+      count_df_chr_sub <- count_df |> dplyr::filter(chr == curr_chr)
+      k_0 <- curr_count
+      k_minus_1 <- count_df_chr_sub |> dplyr::filter(coord == (curr_coord - 1)) |> dplyr::pull(count) |> sum()
+      k_plus_1 <- count_df_chr_sub |> dplyr::filter(coord == (curr_coord + 1)) |> dplyr::pull(count) |> sum()
+      k_minus_2 <- count_df_chr_sub |> dplyr::filter(coord <= (curr_coord - 2),
+                                                     coord >= (curr_coord - offset)) |> dplyr::pull(count) |> sum()
+      k_plus_2 <- count_df_chr_sub |> dplyr::filter(coord >= (curr_coord + 2),
+                                                    coord <= (curr_coord + offset)) |> dplyr::pull(count) |> sum()
+      c(k_minus_2, k_minus_1, k_0, k_plus_1, k_plus_2)
+    }) |> t()
+  }
 
   # fit model
   if (is.null(fit)) {
