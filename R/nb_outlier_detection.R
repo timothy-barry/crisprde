@@ -18,11 +18,13 @@
 #' @export
 #'
 #' @examples
-#' umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds"
+#' data_dir <- .get_config_path("LOCAL_CRISPR_DE_DATA_DIR")
+#'
+#' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
 #' count_df <- readRDS(umi_tab_fp)
 #' res_cntrl <- find_guideseq_edit_sites(count_df)
 #'
-#' umi_tab_fp <- "/Users/timbarry/research_offsite/external/crispr-quant/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds"
+#' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
 #' count_df <- readRDS(umi_tab_fp)
 #' res_trt <- find_guideseq_edit_sites(count_df)
 #'
@@ -117,11 +119,10 @@ bin_counts <- function(count_df, window_size) {
     bin_points <- seq(from = curr_min_coord, to = curr_max_coord, by = window_size)
     gr_bins <- GenomicRanges::GRanges(
       seqnames = chr_name,
-      ranges = IRanges::IRanges(start = bin_points, width = window_size),
-      seqinfo = Seqinfo::Seqinfo(seqnames = as.character(chrom_ranges$chr))
+      ranges = IRanges::IRanges(start = bin_points, width = window_size)
     )
   })
-  gr_bins <- do.call(c, gr_bins_list)
+  suppressWarnings(gr_bins <- do.call(c, gr_bins_list))
 
   # 2.c count overlaps between gr_bins and gr to get count distribution
   hits <- GenomicRanges::findOverlaps(gr_bins, gr_reads)

@@ -15,7 +15,6 @@ Imports:
   GenomicRanges,
   S4Vectors,
   IRanges,
-  Seqinfo,
   stats,
   MASS,
   GenomeInfoDbData
