@@ -1,3 +1,20 @@
+revlog_trans <- function(base = exp(1)) {
+  trans <- function(x) {
+    -log(x, base)
+  }
+  inv <- function(x) {
+    base^(-x)
+  }
+  scales::trans_new(
+    name = paste("revlog-", base, sep = ""),
+    transform = trans,
+    inverse = inv,
+    breaks = scales::log_breaks(base = base),
+    domain = c(1e-100, Inf)
+  )
+}
+
+
 make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log_trans = FALSE,
                              col = c("dodgerblue3", "firebrick")[1], title = NULL) {
   # base plot
@@ -107,7 +124,7 @@ make_manhattan_plot <- function(res_df) {
                          dplyr::mutate(p_value = ifelse(p_value < 1e-300, 1e-300, p_value)),
                        mapping = ggplot2::aes(x = coord, y = p_value)) +
     ggplot2::geom_point(cex = 0.5) +
-    ggplot2::scale_y_continuous(transform = sceptre:::revlog_trans(),
+    ggplot2::scale_y_continuous(transform = revlog_trans(),
                                 breaks = 10^(-seq(0, 1000, by = 100))) +
     ggplot2::facet_wrap("chr") + ggplot2::theme_bw() +
     ggplot2::theme(axis.text.x = ggplot2::element_blank()) +
