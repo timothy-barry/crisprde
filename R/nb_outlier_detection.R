@@ -28,18 +28,23 @@
 #' count_df <- readRDS(umi_tab_fp)
 #' res_trt <- find_guideseq_edit_sites(count_df)
 #'
-find_guideseq_edit_sites <- function(count_df, window_size = 1000, multiplicity_adjustment = "BH", model = "nb",
+find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 1000, max_chain_link = 25,
+                                     multiplicity_adjustment = "BH", model = "nb",
                                      robust_mle = TRUE, multiplicity_alpha = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10,
                                      chrs_to_keep = seq(1L, 22L), plot_col = c("dodgerblue3", "firebrick")[1]) {
   # 1. subset count_df, keeping only chromosomes in chrs_to_keep
   count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep)
 
   # 2. partition genome into nonoverlapping windows; compute the umi count in each window
-  gr_bins <- bin_counts(count_df, window_size)
-
-  # 2.d keep only bins whose read count is greater than or equal to zero
-  gr_bins_sub <- gr_bins[gr_bins$read_sum >= 1]
-  v <- gr_bins_sub$read_sum
+  if (bin_genome) { # random bins
+    gr_bins <- bin_counts(count_df, window_size)
+    gr_bins_sub <- gr_bins[gr_bins$read_sum >= 1]
+    v <- gr_bins_sub$read_sum
+  } else { # cluster
+    clustered_count_df <- compute_distances_between_occupied_loci(count_df = count_df, thresh = max_chain_link) |>
+      collapse_distance_df_based_on_distance()
+    v <- clustered_count_df$umi_count
+  }
 
   # 3. shift v, then fit the model
   y <- v - 1L
@@ -70,13 +75,22 @@ find_guideseq_edit_sites <- function(count_df, window_size = 1000, multiplicity_
   rejected <- (p_adj < multiplicity_alpha)
 
   # 6. prepare result df
-  result_df <- data.frame(chr = gr_bins_sub@seqnames,
-                          range_start = gr_bins_sub@ranges@start,
-                          range_end = gr_bins_sub@ranges@start + gr_bins_sub@ranges@width,
-                          umi_count = gr_bins_sub$read_sum, p_value = p_vals,
-                          p_adj = p_adj, significant_hit = rejected)
+  if (bin_genome) {
+    result_df <- data.frame(chr = gr_bins_sub@seqnames,
+                            range_start = gr_bins_sub@ranges@start,
+                            range_end = gr_bins_sub@ranges@start + gr_bins_sub@ranges@width,
+                            umi_count = gr_bins_sub$read_sum, p_value = p_vals,
+                            p_adj = p_adj, significant_hit = rejected)
+  } else {
+    result_df <- clustered_count_df |> dplyr::mutate(p_value = p_vals, p_adj = p_adj, significant_hit = rejected)
+  }
+
   if (sum(result_df$significant_hit) >= 1) {
-    result_df <- append_lead_base(result_df = result_df, count_df = count_df)
+    if (bin_genome) {
+      result_df <- append_lead_base(result_df = result_df, count_df = count_df)
+    } else {
+      result_df <- append_lead_base_clustered(result_df = result_df, count_df = count_df)
+    }
   }
 
   # 7. create plots
@@ -163,4 +177,18 @@ append_lead_base <- function(result_df, count_df) {
   lead_coords <- c(lead_coords, rep(NA, nrow(result_df_arranged) - nrow(result_df_signif)))
   result_df_arranged$lead_base <- lead_coords
   return(result_df_arranged)
+}
+
+collapse_distance_df_based_on_distance <- function(ds) {
+  ds |> dplyr::group_by(group_id) |>
+    dplyr::summarize(umi_count = sum(count),
+                     chr = chr[1],
+                     range_start = coord[1],
+                     range_end = coord[length(coord)]) |>
+    dplyr::mutate(region_str = paste0("chr", chr, ":", range_start, "-", range_end))
+}
+
+append_lead_base_clustered <- function(result_df, count_df) {
+  result_df_signif <- result_df |> dplyr::filter(significant_hit)
+
 }
