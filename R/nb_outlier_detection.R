@@ -22,12 +22,11 @@
 #'
 #' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
 #' count_df <- readRDS(umi_tab_fp)
-#' res_cntrl <- find_guideseq_edit_sites(count_df)
+#' res_cntrl <- find_guideseq_edit_sites(count_df, bin_genome = FALSE, plot_col = "firebrick")
 #'
 #' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
 #' count_df <- readRDS(umi_tab_fp)
-#' res_trt <- find_guideseq_edit_sites(count_df)
-#'
+#' res_trt <- find_guideseq_edit_sites(count_df, bin_genome = FALSE)
 find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 1000, max_chain_link = 25,
                                      multiplicity_adjustment = "BH", model = "nb",
                                      robust_mle = TRUE, multiplicity_alpha = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10,
@@ -86,11 +85,7 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
   }
 
   if (sum(result_df$significant_hit) >= 1) {
-    if (bin_genome) {
       result_df <- append_lead_base(result_df = result_df, count_df = count_df)
-    } else {
-      result_df <- append_lead_base_clustered(result_df = result_df, count_df = count_df)
-    }
   }
 
   # 7. create plots
@@ -107,13 +102,15 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
   # 8. prepare output
   out <- list(result_df = result_df,
               fitted_model = fit,
-              binned_counts = gr_bins,
               count_histogram_linear = histogram_plot_list$plot_untrans,
               count_histogram_log = histogram_plot_list$plot_trans,
               zoomed_scatterplots_linear = zoomed_plots$linear_plots,
               zoomed_scatterplots_log = zoomed_plots$log_plots,
               global_scatterplot_linear = global_scatterplot_linear,
               global_scatterplot_log = global_scatterplot_log)
+  if (bin_genome) {
+    out$binned_counts <- gr_bins
+  }
   return(out)
 }
 
@@ -190,5 +187,4 @@ collapse_distance_df_based_on_distance <- function(ds) {
 
 append_lead_base_clustered <- function(result_df, count_df) {
   result_df_signif <- result_df |> dplyr::filter(significant_hit)
-
 }

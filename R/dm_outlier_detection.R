@@ -12,9 +12,9 @@
 #' @examples
 #' data_dir <- .get_config_path("LOCAL_CRISPR_DE_DATA_DIR")
 #'
-#' umi_tab_fp <- paste0(data_dir, "guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
+#' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
 #' count_df <- readRDS(umi_tab_fp)
-#' res <- find_guideseq_edit_sites_dm_sliding_window(count_df)
+#' res_cntrl <- find_guideseq_edit_sites(count_df, bin_genome = FALSE, plot_col = "firebrick")
 #'
 #' umi_tab_fp <- paste0(data_dir, "guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
 #' count_df <- readRDS(umi_tab_fp)
@@ -83,6 +83,100 @@ find_guideseq_edit_sites_dm_sliding_window <- function(count_df, window_size = 2
               global_scatterplot_log = global_scatterplot_log,
               zoomed_plots = zoomed_plots)
   return(out)
+}
+
+
+#' Find GUIDE-seq edit sites DM clustered
+#'
+#' @param count_df
+#' @param max_chain_link
+#' @param multiplicity_adjustment
+#' @param multiplicity_alpha
+#' @param chrs_to_keep
+#' @param fit
+#' @param plot_col
+#'
+#' @returns
+#' @export
+#'
+#' @examples
+#' data_dir <- .get_config_path("LOCAL_CRISPR_DE_DATA_DIR")
+#'
+#' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
+#' count_df <- readRDS(umi_tab_fp)
+#' res_cntrl <- find_guideseq_edit_sites_dm_clustered(count_df, plot_col = "firebrick")
+#'
+#' umi_tab_fp <- paste0(data_dir, "guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
+#' count_df <- readRDS(umi_tab_fp)
+#' res_trt <- find_guideseq_edit_sites_dm_clustered(count_df)
+find_guideseq_edit_sites_dm_clustered <- function(count_df, max_chain_link = 25, multiplicity_adjustment = "BH",
+                                                  multiplicity_alpha = 0.1, chrs_to_keep = seq(1L, 22L), fit = NULL,
+                                                  plot_col = c("dodgerblue3", "firebrick")[1]) {
+  # 1. subset count_df, keeping only chromosomes in chrs_to_keep
+  count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep)
+
+  # 2. get the clustered count df
+  distance_df <- compute_distances_between_occupied_loci(count_df = count_df, thresh = max_chain_link)
+
+  # 3. generate X matrix
+  X <- distance_df |>
+    dplyr::group_by(group_id) |>
+    dplyr::do(construct_x_row(.))
+  X_mat <- as.matrix(X[,c("x1", "x2", "x3", "x4", "x5")])
+
+  # 4. fit dm model
+  if (is.null(fit)) {
+    print("Fitting DM model.")
+    fit <- fit_dm_model(X_mat)
+    keep <- apply(X_mat, MARGIN = 1, FUN = function(x) sum(x >= 1)) >= 2
+    fit_thin <- fit_dm_model(X_mat[keep,])
+  }
+
+  # 5. compute p-values and update df
+  p_vals <- compute_lrt_p_vals(X_mat, pi = fit$pi, theta = fit$theta)
+  X$p_value <- p_vals
+  X$significant_hit <- p.adjust(p = p_vals, method = "BH") < multiplicity_alpha
+  # for plotting
+  X$coord <- X$lead_base
+  X$p_combined <- X$p_value
+  X <- X |> dplyr::arrange(p_value)
+
+  # 6. make plots
+  # a. manhattan plot
+  manhattan_plot <- make_manhattan_plot(X)
+  # b. p-value histogram
+  p_value_histogram <- make_p_value_histogram(X)
+  # c. global scatterplots
+  global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
+                                                facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
+  global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
+                                             facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
+  # d. zoomed in plots of significant sites
+  zoomed_plots <- make_discovery_site_scatterplots_dm(distance_df, X, col = plot_col)
+  X$coord <- X$p_combined <- NULL
+
+  out <- list(distance_df = distance_df,
+              X = X, fit = fit,
+              manhattan_plot = manhattan_plot,
+              p_value_histogram = p_value_histogram,
+              global_scatterplot_linear = global_scatterplot_linear,
+              global_scatterplot_log = global_scatterplot_log,
+              zoomed_plots = zoomed_plots)
+}
+
+construct_x_row <- function(df, window_size = 25) {
+  lead_base_pos <- which.max(df$count)
+  lead_base <- df$coord[lead_base_pos]
+  offset <- (window_size - 3)/2
+  x1 <- df |> dplyr::filter(coord >= (lead_base - offset), coord <= (lead_base - 2)) |> dplyr::pull(count) |> sum()
+  x2 <- df |> dplyr::filter(coord == (lead_base - 1)) |> dplyr::pull(count) |> sum()
+  x3 <- df[[lead_base_pos, "count"]]
+  x4 <- df |> dplyr::filter(coord == (lead_base + 1)) |> dplyr::pull(count) |> sum()
+  x5 <- df |> dplyr::filter(coord <= (lead_base + offset), coord >= (lead_base + 2)) |> dplyr::pull(count) |> sum()
+  with(df, data.frame(x1 = x1, x2 = x2, x3 = x3, x4 = x4, x5 = x5,
+                      chr = chr[1], range_start = coord[1], range_end = coord[length(coord)],
+                      lead_base = lead_base)) |>
+    dplyr::mutate(region_str = paste0("chr", chr, ":", range_start, "-", range_end))
 }
 
 combine_p_values_simes <- function(ps, alpha = 0.1) {

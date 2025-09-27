@@ -6,7 +6,9 @@
 \usage{
 find_guideseq_edit_sites(
   count_df,
+  bin_genome = TRUE,
   window_size = 1000,
+  max_chain_link = 25,
   multiplicity_adjustment = "BH",
   model = "nb",
   robust_mle = TRUE,
@@ -33,10 +35,9 @@ data_dir <- .get_config_path("LOCAL_CRISPR_DE_DATA_DIR")
 
 umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
 count_df <- readRDS(umi_tab_fp)
-res_cntrl <- find_guideseq_edit_sites(count_df)
+res_cntrl <- find_guideseq_edit_sites(count_df, bin_genome = FALSE, plot_col = "firebrick")
 
 umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
 count_df <- readRDS(umi_tab_fp)
-res_trt <- find_guideseq_edit_sites(count_df)
-
+res_trt <- find_guideseq_edit_sites(count_df, bin_genome = FALSE)
 }

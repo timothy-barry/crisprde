@@ -16,12 +16,14 @@ revlog_trans <- function(base = exp(1)) {
 
 
 make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log_trans = FALSE,
-                             col = c("dodgerblue3", "firebrick")[1], title = NULL) {
+                             col = c("dodgerblue3", "firebrick")[1], title = NULL, bases = NULL) {
   # base plot
   p <- ggplot2::ggplot(data = count_df, mapping = ggplot2::aes(x = coord, y = count)) +
     ggplot2::geom_segment(ggplot2::aes(x = coord, xend = coord, y = 1, yend = count)) +
     ggplot2::geom_point(size = 0.7, col = col) +
-    ggplot2::theme_bw(base_size = 10) + ggplot2::xlab("Coordinate")
+    ggplot2::theme_bw(base_size = 10) + ggplot2::xlab("Coordinate") +
+    ggplot2::theme(panel.grid.major.x = ggplot2::element_blank(),
+                   panel.grid.minor.x = ggplot2::element_blank())
 
   # facet?
   if (facet_on_chr) {
@@ -35,13 +37,23 @@ make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log
   } else {
     p <- p + ggplot2::ylab("UMI count (linear)")
   }
+  if (!is.null(title)) {
+    p <- p + ggplot2::ggtitle(title)
+  }
+
+  # primary sequence info
+  if (!is.null(bases)) {
+    x_range <- x_range + c(-1, 1)
+    label_df <- data.frame(x = seq(x_range[1], x_range[2])) |>
+      dplyr::mutate(base = c("5'-", bases, "-3'"),
+                    y = if (log_trans) 0.7 else -200)
+    p <- p + ggplot2::geom_text(ggplot2::aes(x = x, y = y, label = base), data = label_df)
+  }
+
   # custom x-range?
   if (!is.null(x_range)) {
     p <- p + ggplot2::scale_x_continuous(breaks = seq(x_range[1], x_range[2], by = 1),
                                          limits = c(x_range[1], x_range[2]))
-  }
-  if (!is.null(title)) {
-    p <- p + ggplot2::ggtitle(title)
   }
 
   return(p)
