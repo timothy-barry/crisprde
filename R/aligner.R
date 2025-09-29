@@ -1,12 +1,12 @@
 run_global_alignment <- function(candidate_protospacer, grna_spacer, match = 1, mismatch = 0, gopen = -1, gext = -1) {
   submat <- pwalign::nucleotideSubstitutionMatrix(match = match, mismatch = mismatch, baseOnly = TRUE)
-  pairwiseAlignment(pattern = grna_spacer,
-                    subject = candidate_protospacer,
-                    substitutionMatrix = submat,
-                    gapOpening = gopen,
-                    gapExtension = gext,
-                    type = "global",
-                    scoreOnly = TRUE)
+  pwalign::pairwiseAlignment(pattern = grna_spacer,
+                             subject = candidate_protospacer,
+                             substitutionMatrix = submat,
+                             gapOpening = gopen,
+                             gapExtension = gext,
+                             type = "global",
+                             scoreOnly = TRUE)
 }
 
 find_best_pam_on_strand <- function(query_seq, grna_spacer, pam_pattern) {
@@ -24,19 +24,30 @@ find_best_pam_on_strand <- function(query_seq, grna_spacer, pam_pattern) {
   data.frame(score = scores, pam_start = pam_starts)
 }
 
-align_spry_cas9 <- function(query_seq, grna_spacer, pam_pattern = "NGG") {
+align_spacer_seq <- function(query_seq, grna_spacer, pam_pattern = "NGG") {
+  grna_length <- length(grna_spacer)
   plus_df <- find_best_pam_on_strand(query_seq = query_seq,
                                      grna_spacer = grna_spacer,
                                      pam_pattern = pam_pattern) |> dplyr::mutate(pam_strand = "+")
-  plus_df$cut_base <- plus_df$pam_start - 3L
   minus_df <- find_best_pam_on_strand(query_seq = reverseComplement(query_seq),
                                       grna_spacer = grna_spacer,
                                       pam_pattern = pam_pattern) |> dplyr::mutate(pam_strand = "-")
+  if (nrow(plus_df) >= 1) {
+    plus_df <- plus_df |> dplyr::mutate(pam_end = pam_start + 2L,
+                                        cut_base_start = pam_start - 4L,
+                                        cut_base_end = pam_start - 3L,
+                                        protospacer_start = pam_start - grna_length,
+                                        protospacer_end = pam_start - 1L)
+  }
   # translate minus-strand coordinates back to original system
-  if (nrow(minus) >= 1) {
-    minus_df$pam_start <- length(query_seq) - minus_df$pam_start - 1L
-    minus_df$cut_base <- minus_df$pam_start + 5L
+  if (nrow(minus_df) >= 1) {
+    minus_df <- minus_df |> dplyr::mutate(pam_start = length(query_seq) - pam_start - 1L,
+                                          pam_end = pam_start + 2L,
+                                          cut_base_start = pam_start + 5L,
+                                          cut_base_end = pam_end + 6L,
+                                          protospacer_start = pam_start + 3L,
+                                          protospacer_end = pam_start + 2L + grna_length)
   }
   # construct combined df
-  combined_df <- rbind(plus_df, minus_df)
+  combined_df <- rbind(plus_df, minus_df) |> dplyr::arrange(dplyr::desc(score))
 }
