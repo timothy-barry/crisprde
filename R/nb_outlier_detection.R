@@ -27,10 +27,10 @@
 #' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
 #' count_df <- readRDS(umi_tab_fp)
 #' res_trt <- find_guideseq_edit_sites(count_df, bin_genome = FALSE)
-find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 1000, max_chain_link = 25,
+find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 1000, max_chain_link = 50,
                                      multiplicity_adjustment = "BH", model = "nb",
                                      robust_mle = TRUE, multiplicity_alpha = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10,
-                                     chrs_to_keep = seq(1L, 22L), plot_col = c("dodgerblue3", "firebrick")[1]) {
+                                     chrs_to_keep = paste0("chr", seq(1L, 22L)), plot_col = c("dodgerblue3", "firebrick")[1]) {
   # 1. subset count_df, keeping only chromosomes in chrs_to_keep
   count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep)
 
@@ -39,7 +39,7 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
     gr_bins <- bin_counts(count_df, window_size)
     gr_bins_sub <- gr_bins[gr_bins$read_sum >= 1]
     v <- gr_bins_sub$read_sum
-  } else { # cluster
+  } else { # cluster (maybe a genomic ranges object?)
     clustered_count_df <- compute_distances_between_occupied_loci(count_df = count_df, thresh = max_chain_link) |>
       collapse_distance_df_based_on_distance()
     v <- clustered_count_df$umi_count
@@ -81,12 +81,15 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
                             umi_count = gr_bins_sub$read_sum, p_value = p_vals,
                             p_adj = p_adj, significant_hit = rejected)
   } else {
-    result_df <- clustered_count_df |> dplyr::mutate(p_value = p_vals, p_adj = p_adj, significant_hit = rejected)
+    clustered_count_df$p_value <- p_vals
+    clustered_count_df$p_adj <- p_adj
+    clustered_count_df$significant_hit <- rejected
+    result_df <- clustered_count_df
   }
 
-  if (sum(result_df$significant_hit) >= 1) {
+  #if (sum(result_df$significant_hit) >= 1) {
       result_df <- append_lead_base(result_df = result_df, count_df = count_df)
-  }
+  #}
 
   # 7. create plots
   # a. histogram plots
@@ -97,15 +100,15 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
   global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
                                              facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
   # c. zoomed-in scatter plots on discovery sites
-  zoomed_plots <- make_discovery_site_scatterplots(count_df = count_df, result_df = result_df, col = plot_col)
+  # zoomed_plots <- make_discovery_site_scatterplots(count_df = count_df, result_df = result_df, col = plot_col)
 
   # 8. prepare output
   out <- list(result_df = result_df,
               fitted_model = fit,
               count_histogram_linear = histogram_plot_list$plot_untrans,
               count_histogram_log = histogram_plot_list$plot_trans,
-              zoomed_scatterplots_linear = zoomed_plots$linear_plots,
-              zoomed_scatterplots_log = zoomed_plots$log_plots,
+              #zoomed_scatterplots_linear = zoomed_plots$linear_plots,
+              #zoomed_scatterplots_log = zoomed_plots$log_plots,
               global_scatterplot_linear = global_scatterplot_linear,
               global_scatterplot_log = global_scatterplot_log)
   if (bin_genome) {
@@ -159,32 +162,40 @@ compute_lrt_p_value_nb <- function(mu, theta, y) {
   return(p_vals)
 }
 
+
+#' Append lead base
+#'
+#' @param result_df
+#' @param count_df
+#'
+#' @export
 append_lead_base <- function(result_df, count_df) {
-  result_df_arranged <- result_df |> dplyr::arrange(p_value)
-  result_df_signif <- result_df_arranged |> dplyr::filter(significant_hit)
-  lead_coords <- sapply(X = seq(1L, nrow(result_df_signif)), FUN = function(i) {
-    curr_chr <- as.character(result_df_signif$chr[i])
-    curr_range_start <- result_df_signif$range_start[i]
-    curr_range_end <- result_df_signif$range_end[i]
+  result_df_arranged <- result_df |> plyranges::arrange(p_value)
+  # result_df_arranged <- result_df_arranged |> plyranges::filter(significant_hit)
+  lead_coords <- sapply(X = seq(1L, length(result_df_arranged)), FUN = function(i) {
+    curr_chr <- as.character(GenomicRanges::seqnames(result_df_arranged)[i])
+    curr_range_start <- GenomicRanges::start(result_df_arranged)[i]
+    curr_range_end <- GenomicRanges::end(result_df_arranged)[i]
     count_df_sub <- count_df |>
       dplyr::filter(chr == curr_chr & coord >= curr_range_start & coord <= curr_range_end)
     lead_base <- count_df_sub$coord[which.max(count_df_sub$count)]
     lead_base
   })
-  lead_coords <- c(lead_coords, rep(NA, nrow(result_df_arranged) - nrow(result_df_signif)))
+  # lead_coords <- c(lead_coords, rep(NA, length(result_df_arranged) - length(result_df_signif)))
   result_df_arranged$lead_base <- lead_coords
   return(result_df_arranged)
 }
 
-collapse_distance_df_based_on_distance <- function(ds) {
-  ds |> dplyr::group_by(group_id) |>
+collapse_distance_df_based_on_distance <- function(ds, padding = 25L) {
+  x <- ds |> dplyr::group_by(group_id) |>
     dplyr::summarize(umi_count = sum(count),
                      chr = chr[1],
                      range_start = coord[1],
-                     range_end = coord[length(coord)]) |>
-    dplyr::mutate(region_str = paste0("chr", chr, ":", range_start, "-", range_end))
-}
-
-append_lead_base_clustered <- function(result_df, count_df) {
-  result_df_signif <- result_df |> dplyr::filter(significant_hit)
+                     range_end = coord[length(coord)])
+  gr <- GenomicRanges::GRanges(seqnames = x$chr,
+                               ranges = IRanges::IRanges(x$range_start - padding, end = x$range_end + padding),
+                               strand = "*",
+                               group_id = x$group_id,
+                               umi_count = x$umi_count)
+  return(gr)
 }

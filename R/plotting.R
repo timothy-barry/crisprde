@@ -15,9 +15,27 @@ revlog_trans <- function(base = exp(1)) {
 }
 
 
+#' Make scatterplot
+#'
+#' @param count_df
+#' @param x_range
+#' @param facet_on_chr
+#' @param log_trans
+#' @param point_size
+#' @param col
+#' @param title
+#' @param target_seq
+#' @param grna_spacer
+#' @param pam_strand
+#' @param protospacer_range
+#' @param pam_range
+#' @param cut_base_range
+#'
+#' @export
 make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log_trans = FALSE, point_size = 1,
                              col = c("dodgerblue3", "firebrick")[1], title = NULL, target_seq = NULL,
-                             grna_spacer = NULL, protospacer_range = NULL, pam_range = NULL, cut_base_range = NULL) {
+                             grna_spacer = NULL, pam_strand = NULL, protospacer_range = NULL, pam_range = NULL,
+                             cut_base_range = NULL) {
   # base plot
   p <- ggplot2::ggplot(data = count_df, mapping = ggplot2::aes(x = coord, y = count)) +
     ggplot2::geom_segment(ggplot2::aes(x = coord, xend = coord, y = if (log_trans) 1 else 0, yend = count)) +
@@ -48,6 +66,7 @@ make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log
       target_seq <- strsplit(as.character(target_seq), split = "")[[1]]
     }
     if (is(grna_spacer, "DNAString")) {
+      if (pam_strand == "-") grna_spacer <- Biostrings::reverseComplement(grna_spacer)
       grna_spacer <- strsplit(as.character(grna_spacer), split = "")[[1]]
     }
     max_count <- max(count_df$count)
@@ -61,6 +80,7 @@ make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log
     label_df <- data.frame(x = seq(x_range[1], x_range[2])) |>
       dplyr::mutate(base = target_seq, y = target_seq_y) |>
       dplyr::mutate(base_type = "target")
+
     if (!is.null(grna_spacer)) {
       label_df <- label_df |>
         dplyr::mutate(pam_site = (x >= pam_range[1] & x <= pam_range[2])) |>
@@ -92,24 +112,6 @@ make_scatterplot <- function(count_df, x_range = NULL, facet_on_chr = FALSE, log
 
   return(p)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 make_discovery_site_scatterplots <- function(count_df, result_df, plot_window_size = 30, col = c("dodgerblue3", "firebrick")[1]) {
@@ -174,7 +176,7 @@ make_histogram_plot <- function(y, fit, result_df, model) {
 
   # check if discoveries are present; if so, draw line
   if (any(result_df$significant_hit)) {
-    rejection_thresh <- result_df |> dplyr::filter(significant_hit) |> dplyr::pull(umi_count) |> min()
+    rejection_thresh <- (result_df |> plyranges::filter(significant_hit))$umi_count |> min()
     p_model_untrans <- p_model_untrans + ggplot2::geom_vline(xintercept = rejection_thresh, col = "blue", linetype = "dashed")
   }
   p_model_trans <- p_model_untrans +

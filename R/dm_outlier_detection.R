@@ -85,7 +85,6 @@ find_guideseq_edit_sites_dm_sliding_window <- function(count_df, window_size = 2
   return(out)
 }
 
-
 #' Find GUIDE-seq edit sites DM clustered
 #'
 #' @param count_df

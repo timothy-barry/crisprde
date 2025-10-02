@@ -8,14 +8,14 @@ find_guideseq_edit_sites(
   count_df,
   bin_genome = TRUE,
   window_size = 1000,
-  max_chain_link = 25,
+  max_chain_link = 50,
   multiplicity_adjustment = "BH",
   model = "nb",
   robust_mle = TRUE,
   multiplicity_alpha = 0.1,
   c_tukey_beta = 10,
   c_tukey_sigma = 10,
-  chrs_to_keep = seq(1L, 22L),
+  chrs_to_keep = paste0("chr", seq(1L, 22L)),
   plot_col = c("dodgerblue3", "firebrick")[1]
 )
 }

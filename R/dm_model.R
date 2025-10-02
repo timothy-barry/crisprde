@@ -39,15 +39,3 @@ compute_dm_log_lik <- function(r, pi, theta) {
   return(log_lik)
 }
 
-compute_lrt_p_vals <- function(X, pi, theta) {
-  K <- ncol(X)
-  phi <- (1 - theta)/theta
-  p_values <- apply(X, MARGIN = 1, FUN = function(r) {
-    reduced_model_log_lik <- compute_dm_log_lik(r, pi, theta)
-    pi_hat <- (r + phi/K)/(sum(r) + phi)
-    full_model_log_lik <- compute_dm_log_lik(r, pi_hat, theta)
-    chi_sq <- -2 * (reduced_model_log_lik - full_model_log_lik)
-    pchisq(q = chi_sq, df = K - 1, lower.tail = FALSE)
-  })
-  return(p_values)
-}
