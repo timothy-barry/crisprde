@@ -32,7 +32,7 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
                                      robust_mle = TRUE, multiplicity_alpha = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10,
                                      chrs_to_keep = paste0("chr", seq(1L, 22L)), plot_col = c("dodgerblue3", "firebrick")[1]) {
   # 1. subset count_df, keeping only chromosomes in chrs_to_keep
-  count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep)
+  count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep) |> dplyr::arrange(chr, coord)
 
   # 2. partition genome into nonoverlapping windows; compute the umi count in each window
   if (bin_genome) { # random bins
@@ -87,9 +87,11 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
     result_df <- clustered_count_df
   }
 
-  #if (sum(result_df$significant_hit) >= 1) {
-      result_df <- append_lead_base(result_df = result_df, count_df = count_df)
-  #}
+  if (sum(result_df$significant_hit) >= 1) {
+    result_df$append_lead_base <- result_df$significant_hit
+    result_df <- append_lead_base(result_df = result_df, count_df = count_df)
+    result_df$append_lead_base <- NULL
+  }
 
   # 7. create plots
   # a. histogram plots
@@ -171,17 +173,17 @@ compute_lrt_p_value_nb <- function(mu, theta, y) {
 #' @export
 append_lead_base <- function(result_df, count_df) {
   result_df_arranged <- result_df |> plyranges::arrange(p_value)
-  # result_df_arranged <- result_df_arranged |> plyranges::filter(significant_hit)
-  lead_coords <- sapply(X = seq(1L, length(result_df_arranged)), FUN = function(i) {
-    curr_chr <- as.character(GenomicRanges::seqnames(result_df_arranged)[i])
-    curr_range_start <- GenomicRanges::start(result_df_arranged)[i]
-    curr_range_end <- GenomicRanges::end(result_df_arranged)[i]
+  result_df_arranged_sub <- result_df_arranged |> plyranges::filter(append_lead_base)
+  lead_coords <- sapply(X = seq(1L, length(result_df_arranged_sub)), FUN = function(i) {
+    curr_chr <- as.character(GenomicRanges::seqnames(result_df_arranged_sub)[i])
+    curr_range_start <- GenomicRanges::start(result_df_arranged_sub)[i]
+    curr_range_end <- GenomicRanges::end(result_df_arranged_sub)[i]
     count_df_sub <- count_df |>
       dplyr::filter(chr == curr_chr & coord >= curr_range_start & coord <= curr_range_end)
     lead_base <- count_df_sub$coord[which.max(count_df_sub$count)]
     lead_base
   })
-  # lead_coords <- c(lead_coords, rep(NA, length(result_df_arranged) - length(result_df_signif)))
+  lead_coords <- c(lead_coords, rep(NA, length(result_df_arranged) - length(result_df_arranged_sub)))
   result_df_arranged$lead_base <- lead_coords
   return(result_df_arranged)
 }
