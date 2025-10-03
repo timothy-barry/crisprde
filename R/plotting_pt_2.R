@@ -14,6 +14,21 @@ revlog_trans <- function(base = exp(1)) {
   )
 }
 
+#' Make local scatterplot
+#'
+#' @param count_df
+#' @param x_range
+#' @param log_trans
+#' @param point_size
+#' @param col
+#' @param title
+#' @param target_seq
+#' @param grna_spacer
+#' @param pam_strand
+#' @param protospacer_range
+#' @param pam_range
+#' @param cut_base_range
+#' @export
 make_local_scatterplot <- function(count_df, x_range = NULL, log_trans = FALSE, point_size = 1,
                                    col = c("dodgerblue3", "firebrick")[1], title = NULL, target_seq = NULL,
                                    grna_spacer = NULL, pam_strand = NULL, protospacer_range = NULL, pam_range = NULL,
@@ -50,11 +65,11 @@ make_local_scatterplot <- function(count_df, x_range = NULL, log_trans = FALSE, 
       ggplot2::theme_bw(base_size = 10) + ggplot2::xlab("Coordinate") +
       ggplot2::theme(panel.grid.major.x = ggplot2::element_blank(),
                      panel.grid.minor.x = ggplot2::element_blank(),
-                     axis.title.x = element_blank(),
-                     axis.text.x  = element_blank(),
-                     axis.ticks.x = element_blank(),
-                     panel.border = element_blank(),
-                     plot.margin = margin(0.0, 5.5, 0.0, 5.5)) +
+                     axis.title.x = ggplot2::element_blank(),
+                     axis.text.x  = ggplot2::element_blank(),
+                     axis.ticks.x = ggplot2::element_blank(),
+                     panel.border = ggplot2::element_blank(),
+                     plot.margin = ggplot2::margin(0.0, 5.5, 0.0, 5.5)) +
       ggplot2::scale_x_continuous(limits = range(label_df$x))
   }
   p_plus <- make_base_plot(count_df_plus)
@@ -76,11 +91,11 @@ make_local_scatterplot <- function(count_df, x_range = NULL, log_trans = FALSE, 
       ggplot2::ylab("")
   } else {
     p_plus <- p_plus + ggplot2::ylab("") +
-      ggplot2::scale_y_continuous(expand = expansion(mult = 0.01, add = 0),
+      ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = 0.01, add = 0),
                                   limits = y_limits)
     p_minus <- p_minus + ggplot2::ylab("") +
       ggplot2::scale_y_continuous(trans = scales::reverse_trans(),
-                                  expand = expansion(mult = 0.01, add = 0),
+                                  expand = ggplot2::expansion(mult = 0.01, add = 0),
                                   limits = y_limits)
   }
 
@@ -93,27 +108,27 @@ make_local_scatterplot <- function(count_df, x_range = NULL, log_trans = FALSE, 
                    panel.grid.minor.x = ggplot2::element_blank(),
                    panel.grid.major.y = ggplot2::element_blank(),
                    panel.grid.minor.y = ggplot2::element_blank(),
-                   axis.title.x = element_blank(),
-                   axis.text.x  = element_blank(),
-                   axis.ticks.x = element_blank(),
-                   axis.text.y  = element_blank(),
-                   axis.ticks.y = element_blank(),
-                   panel.border = element_blank(),
-                   plot.margin = margin(0.0, 5.5, 0.0, 5.5),
+                   axis.title.x = ggplot2::element_blank(),
+                   axis.text.x  = ggplot2::element_blank(),
+                   axis.ticks.x = ggplot2::element_blank(),
+                   axis.text.y  = ggplot2::element_blank(),
+                   axis.ticks.y = ggplot2::element_blank(),
+                   panel.border = ggplot2::element_blank(),
+                   plot.margin = ggplot2::margin(0.0, 5.5, 0.0, 5.5),
                    legend.position = "none") +
-    ylab(paste0("UMI count ", if (log_trans) "(log)" else "(linear)")) +
-    scale_y_continuous(limits = c(-0.17, 0.15))
+    ggplot2::ylab(paste0("UMI count ", if (log_trans) "(log)" else "(linear)")) +
+    ggplot2::scale_y_continuous(limits = c(-0.17, 0.15))
 
   if (!is.null(cut_base_range)) {
     cut_spot_x <- mean(cut_base_range)
-    p_middle <- p_middle + ggplot2::geom_segment(mapping = ggplot2::aes(x = cut_spot_x, xend = cut_spot_x,
-                                                                        y = -0.5, yend = 0.5),
-                                                 data = data.frame(), col = "orange")
-
+    p_middle <- p_middle + ggplot2::geom_vline(xintercept = cut_spot_x, col = "orange")
   }
 
   library(patchwork)
   p_all <- (p_plus /  p_middle / p_minus) +
-    plot_layout(heights = c(1, 0.1, 1), axes = "collect") +
-    plot_annotation(title = title)
+    plot_layout(heights = c(1, 0.13, 1), axes = "collect")
+  if (!is.null(title)) {
+    p_all <- p_all + plot_annotation(title = title)
+  }
+  return(p_all)
 }
