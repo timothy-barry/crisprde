@@ -95,24 +95,24 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
 
   # 7. create plots
   # a. histogram plots
-  histogram_plot_list <- make_histogram_plot(y, fit, result_df, model)
+  #histogram_plot_list <- make_histogram_plot(y, fit, result_df, model)
   # b. global scatterplot
-  global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
-                                                facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
-  global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
-                                             facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
+  #global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
+  #                                              facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
+  #global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
+  #                                           facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
   # c. zoomed-in scatter plots on discovery sites
   # zoomed_plots <- make_discovery_site_scatterplots(count_df = count_df, result_df = result_df, col = plot_col)
 
   # 8. prepare output
   out <- list(result_df = result_df,
-              fitted_model = fit,
-              count_histogram_linear = histogram_plot_list$plot_untrans,
-              count_histogram_log = histogram_plot_list$plot_trans,
+              fitted_model = fit)
+              #count_histogram_linear = histogram_plot_list$plot_untrans,
+              #count_histogram_log = histogram_plot_list$plot_trans,
               #zoomed_scatterplots_linear = zoomed_plots$linear_plots,
               #zoomed_scatterplots_log = zoomed_plots$log_plots,
-              global_scatterplot_linear = global_scatterplot_linear,
-              global_scatterplot_log = global_scatterplot_log)
+              #global_scatterplot_linear = global_scatterplot_linear,
+              #global_scatterplot_log = global_scatterplot_log)
   if (bin_genome) {
     out$binned_counts <- gr_bins
   }
