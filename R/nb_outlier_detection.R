@@ -20,19 +20,32 @@
 #' @examples
 #' data_dir <- .get_config_path("LOCAL_CRISPR_DE_DATA_DIR")
 #'
+#' #####################
+#' # ONE-SAMPLE ANALYSIS
+#' #####################
 #' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
-#' count_df <- readRDS(umi_tab_fp)
-#' res_cntrl <- find_guideseq_edit_sites(count_df, bin_genome = FALSE, plot_col = "firebrick")
+#' count_df_cntrl <- readRDS(umi_tab_fp)
+#' res_cntrl <- find_guideseq_edit_sites(count_df_cntrl, plot_col = "firebrick")
 #'
 #' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
-#' count_df <- readRDS(umi_tab_fp)
-#' res_trt <- find_guideseq_edit_sites(count_df, bin_genome = FALSE)
-find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 1000, max_chain_link = 50,
-                                     multiplicity_adjustment = "BH", model = "nb",
+#' count_df_trt <- readRDS(umi_tab_fp)
+#' grna_info <- attr(count_df_trt, "grna_info")
+#' res_trt <- find_guideseq_edit_sites(count_df_trt, grna_spacer = grna_info$spacer)
+#'
+#' #####################
+#' # TWO-SAMPLE ANALYSIS3
+#' #####################
+#' res_cntrl <- find_guideseq_edit_sites(count_df_cntrl, plot_col = "firebrick", robust_mle = FALSE)
+#' res_trt <- find_guideseq_edit_sites(count_df_trt, plot_col = "dodgerblue3", robust_mle = FALSE, fit = res_cntrl$fitted_model, use_offset = TRUE)
+find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, bin_genome = FALSE, window_size = 1000,
+                                     max_chain_link = 50, multiplicity_adjustment = "BH", fit = NULL, use_offset = FALSE, model = "nb",
                                      robust_mle = TRUE, multiplicity_alpha = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10,
                                      chrs_to_keep = paste0("chr", seq(1L, 22L)), plot_col = c("dodgerblue3", "firebrick")[1]) {
+  # 0. check args
+  if (use_offset && robust_mle) stop("Robust MLE does not currently support offsets.")
+
   # 1. subset count_df, keeping only chromosomes in chrs_to_keep
-  count_df <- count_df |> dplyr::filter(chr %in% chrs_to_keep) |> dplyr::arrange(chr, coord)
+  count_df <- count_df |> dplyr::arrange(chr, coord) # dplyr::filter(chr %in% chrs_to_keep)
 
   # 2. partition genome into nonoverlapping windows; compute the umi count in each window
   if (bin_genome) { # random bins
@@ -47,18 +60,25 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
 
   # 3. shift v, then fit the model
   y <- v - 1L
-  if (robust_mle && model == "nb") {
-    fit <- fit_rob_nb_univariate(y = y, c.tukey.beta = c_tukey_beta, c.tukey.sigma = c_tukey_sigma)
-    theta_hat <- fit[["theta"]]
-  } else if (!robust_mle && model == "nb") {
-    fit <- fit_nb_univariate(y = y)
-    theta_hat <- fit[["theta"]]
-  } else if (!robust_mle && model == "poisson") {
+
+  if (is.null(fit)) {
+    if (robust_mle && model == "nb") {
+      fit <- fit_rob_nb_univariate(y = y, c.tukey.beta = c_tukey_beta, c.tukey.sigma = c_tukey_sigma)
+      theta_hat <- fit[["theta"]]
+    } else if (!robust_mle && model == "nb") {
+      fit <- fit_nb_univariate(y = y)
+      theta_hat <- fit[["theta"]]
+    } else if (!robust_mle && model == "poisson") {
       fit <- list(mu = mean(y))
+    } else {
+      stop("Model not recognized.")
+    }
+    mu_hat <- fit[["mu"]]
   } else {
-    stop("Model not recognized.")
+    theta_hat <- fit[["theta"]]
+    mu_hat <- if (use_offset) sum(y) * fit[["gamma"]] else fit[["mu"]]
   }
-  mu_hat <- fit[["mu"]]
+
 
   # 4. compute p-value for each observation
   if (model == "nb") {
@@ -93,9 +113,21 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
     result_df$append_lead_base <- NULL
   }
 
+  if (!is.null(grna_spacer)) {
+    spacer_alignment <- align_spacer_to_genome(grna_spacer = grna_spacer, pam = pam)
+    hits <- GenomicRanges::findOverlaps(query = spacer_alignment, subject = result_df)
+    if (length(hits@to) == 1L) {
+      result_df$on_target_site <- FALSE
+      result_df$on_target_site[hits@to] <- TRUE
+    }
+  } else {
+    spacer_alignment <- NULL
+  }
+
   # 7. create plots
   # a. histogram plots
-  #histogram_plot_list <- make_histogram_plot(y, fit, result_df, model)
+  histogram_plot_list <- make_histogram_plot(y, fit, result_df, model)
+
   # b. global scatterplot
   #global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
   #                                              facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
@@ -106,9 +138,11 @@ find_guideseq_edit_sites <- function(count_df, bin_genome = TRUE, window_size = 
 
   # 8. prepare output
   out <- list(result_df = result_df,
-              fitted_model = fit)
-              #count_histogram_linear = histogram_plot_list$plot_untrans,
-              #count_histogram_log = histogram_plot_list$plot_trans,
+              fitted_model = fit,
+              count_histogram_linear = histogram_plot_list$plot_untrans,
+              count_histogram_log = histogram_plot_list$plot_trans,
+              spacer_alignment = spacer_alignment)
+
               #zoomed_scatterplots_linear = zoomed_plots$linear_plots,
               #zoomed_scatterplots_log = zoomed_plots$log_plots,
               #global_scatterplot_linear = global_scatterplot_linear,

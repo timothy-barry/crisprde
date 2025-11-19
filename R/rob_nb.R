@@ -110,14 +110,20 @@ fit_rob_nb_univariate <- function(y, weights = rep(1, length(y)), c.tukey.beta=1
     beta11 <- beta1
     it <- it + 1
   }
-  theta.est <- c(mu = exp(beta11), theta = 1/sigma)
-
-  return(theta.est)
+  mu <- exp(beta11)
+  theta <- 1/sigma
+  l <- sum(y)
+  gamma <- mu/l
+  out <- c(mu = mu, theta = theta, gamma = gamma, l = l)
+  return(out)
 }
 
 fit_nb_univariate <- function(y) {
   fit <- MASS::glm.nb(formula = y ~ 1)
-  c(mu = exp(fit$coef[[1]]), theta = fit$theta)
+  mu_hat <- exp(fit$coef[[1]])
+  l <- sum(y)
+  gamma_hat <- mu_hat/l
+  c(mu = mu_hat, gamma = gamma_hat, theta = fit$theta, l = l)
 }
 
 ###############

@@ -96,7 +96,7 @@ make_local_scatterplot <- function(count_df, x_range = NULL, log_trans = FALSE, 
     p_minus <- p_minus + ggplot2::ylab("") +
       ggplot2::scale_y_continuous(trans = scales::reverse_trans(),
                                   expand = ggplot2::expansion(mult = 0.01, add = 0),
-                                  limits = y_limits)
+                                  limits = y_limits[c(2L, 1L)])
   }
 
   p_middle <- ggplot2::ggplot() +

@@ -6,10 +6,14 @@
 \usage{
 find_guideseq_edit_sites(
   count_df,
-  bin_genome = TRUE,
+  grna_spacer = NULL,
+  pam = NULL,
+  bin_genome = FALSE,
   window_size = 1000,
   max_chain_link = 50,
   multiplicity_adjustment = "BH",
+  fit = NULL,
+  use_offset = FALSE,
   model = "nb",
   robust_mle = TRUE,
   multiplicity_alpha = 0.1,
@@ -33,11 +37,21 @@ TO DO:
 \examples{
 data_dir <- .get_config_path("LOCAL_CRISPR_DE_DATA_DIR")
 
+#####################
+# ONE-SAMPLE ANALYSIS
+#####################
 umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
-count_df <- readRDS(umi_tab_fp)
-res_cntrl <- find_guideseq_edit_sites(count_df, bin_genome = FALSE, plot_col = "firebrick")
+count_df_cntrl <- readRDS(umi_tab_fp)
+res_cntrl <- find_guideseq_edit_sites(count_df_cntrl, bin_genome = FALSE, plot_col = "firebrick")
 
 umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
-count_df <- readRDS(umi_tab_fp)
-res_trt <- find_guideseq_edit_sites(count_df, bin_genome = FALSE)
+count_df_trt <- readRDS(umi_tab_fp)
+grna_info <- attr(count_df_trt, "grna_info")
+res_trt <- find_guideseq_edit_sites(count_df_trt, bin_genome = FALSE, grna_spacer = grna_info$spacer)
+
+#####################
+# TWO-SAMPLE ANALYSIS
+#####################
+res_cntrl <- find_guideseq_edit_sites(count_df_cntrl, plot_col = "firebrick", robust_mle = FALSE)
+res_trt <- find_guideseq_edit_sites(count_df_trt, plot_col = "dodgerblue3", robust_mle = FALSE, fit = res_cntrl$fitted_model, use_offset = TRUE)
 }
