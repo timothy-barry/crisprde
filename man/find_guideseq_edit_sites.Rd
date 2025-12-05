@@ -35,23 +35,14 @@ TO DO:
 }
 }
 \examples{
-data_dir <- .get_config_path("LOCAL_CRISPR_DE_DATA_DIR")
+data_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
+combined_count_df <- readRDS(paste0(data_dir, "count_tables_no_multimap/combined_count_df.rds"))
+count_df <- combined_count_df |>
+  dplyr::filter(sample_id_long == "CD34-WT-Cas9-dsODN-only-GSPneg-5uM-S90_S98") |>
+  dplyr::rename("count" = "umi_count")
+grna_info <- readRDS(paste0(data_dir, "spacer_info.rds"))
+grna_spacer <- grna_info$spacer_seq
+pam <- grna_info$pam
+res <- find_guideseq_edit_sites(count_df, grna_spacer, pam)
 
-#####################
-# ONE-SAMPLE ANALYSIS
-#####################
-umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
-count_df_cntrl <- readRDS(umi_tab_fp)
-res_cntrl <- find_guideseq_edit_sites(count_df_cntrl, bin_genome = FALSE, plot_col = "firebrick")
-
-umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
-count_df_trt <- readRDS(umi_tab_fp)
-grna_info <- attr(count_df_trt, "grna_info")
-res_trt <- find_guideseq_edit_sites(count_df_trt, bin_genome = FALSE, grna_spacer = grna_info$spacer)
-
-#####################
-# TWO-SAMPLE ANALYSIS
-#####################
-res_cntrl <- find_guideseq_edit_sites(count_df_cntrl, plot_col = "firebrick", robust_mle = FALSE)
-res_trt <- find_guideseq_edit_sites(count_df_trt, plot_col = "dodgerblue3", robust_mle = FALSE, fit = res_cntrl$fitted_model, use_offset = TRUE)
 }

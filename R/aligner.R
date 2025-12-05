@@ -11,15 +11,15 @@ run_global_alignment <- function(candidate_protospacer, grna_spacer, match = 1, 
 
 find_best_pam_on_strand <- function(query_seq, grna_spacer, pam_pattern) {
   spacer_length <- length(grna_spacer)
-  pam_hits <- matchPattern(pam_pattern, query_seq, fixed = FALSE)
-  if (length(pam_hits) == 0L) return(data.frame())
+  pam_hits <- Biostrings::matchPattern(pam_pattern, query_seq, fixed = FALSE)
+  if (length(pam_hits) == 0L) return(data.frame(score = integer(0), pam_start = integer(0)))
   pam_starts <- start(pam_hits)
   window_starts <- pam_starts - spacer_length
   ok_window <- window_starts >= 1L
   # subset hits to ok window
   pam_starts <- pam_starts[ok_window]; window_starts <- window_starts[ok_window]
   # obtain the subsetted query strings (i.e., candidate protospacers)
-  views <- DNAStringSet(Views(query_seq, start = window_starts, width = spacer_length))
+  views <- Biostrings::DNAStringSet(Views(query_seq, start = window_starts, width = spacer_length))
   scores <- vapply(views, run_global_alignment, numeric(1), grna_spacer = grna_spacer)
   data.frame(score = scores, pam_start = pam_starts)
 }
@@ -38,7 +38,7 @@ align_spacer_seq <- function(query_seq, grna_spacer, pam_pattern = "NGG") {
   plus_df <- find_best_pam_on_strand(query_seq = query_seq,
                                      grna_spacer = grna_spacer,
                                      pam_pattern = pam_pattern) |> dplyr::mutate(pam_strand = "+")
-  minus_df <- find_best_pam_on_strand(query_seq = reverseComplement(query_seq),
+  minus_df <- find_best_pam_on_strand(query_seq = Biostrings::reverseComplement(query_seq),
                                       grna_spacer = grna_spacer,
                                       pam_pattern = pam_pattern) |> dplyr::mutate(pam_strand = "-")
   if (nrow(plus_df) >= 1) {

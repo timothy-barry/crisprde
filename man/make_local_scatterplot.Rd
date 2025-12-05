@@ -5,7 +5,7 @@
 \title{Make local scatterplot}
 \usage{
 make_local_scatterplot(
-  count_df,
+  count_df_sub,
   x_range = NULL,
   log_trans = FALSE,
   point_size = 1,

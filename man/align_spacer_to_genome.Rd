@@ -6,8 +6,8 @@
 \usage{
 align_spacer_to_genome(
   grna_spacer,
-  ref_genome = .get_config_path("REF_GENOME"),
-  pam = NULL
+  ref_genome = paste0(.get_config_path("REF_GENOME_DIR"), "hg38_main_chroms"),
+  pam = NA
 )
 }
 \arguments{

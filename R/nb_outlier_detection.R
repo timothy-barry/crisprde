@@ -18,25 +18,16 @@
 #' @export
 #'
 #' @examples
-#' data_dir <- .get_config_path("LOCAL_CRISPR_DE_DATA_DIR")
+#' data_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
+#' combined_count_df <- readRDS(paste0(data_dir, "count_tables_no_multimap/combined_count_df.rds"))
+#' count_df <- combined_count_df |>
+#'   dplyr::filter(sample_id_long == "CD34-WT-Cas9-dsODN-only-GSPneg-5uM-S90_S98") |>
+#'   dplyr::rename("count" = "umi_count")
+#' grna_info <- readRDS(paste0(data_dir, "spacer_info.rds"))
+#' grna_spacer <- grna_info$spacer_seq
+#' pam <- grna_info$pam
+#' res <- find_guideseq_edit_sites(count_df, grna_spacer, pam)
 #'
-#' #####################
-#' # ONE-SAMPLE ANALYSIS
-#' #####################
-#' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-dsODN-only-GSPneg-S81_S89_L001_count_table.rds")
-#' count_df_cntrl <- readRDS(umi_tab_fp)
-#' res_cntrl <- find_guideseq_edit_sites(count_df_cntrl, plot_col = "firebrick")
-#'
-#' umi_tab_fp <- paste0(data_dir, "/guideseq/count_tables/293T-SpRY-Cas9-1620-GSPneg-S79_S87_L001_count_table.rds")
-#' count_df_trt <- readRDS(umi_tab_fp)
-#' grna_info <- attr(count_df_trt, "grna_info")
-#' res_trt <- find_guideseq_edit_sites(count_df_trt, grna_spacer = grna_info$spacer)
-#'
-#' #####################
-#' # TWO-SAMPLE ANALYSIS3
-#' #####################
-#' res_cntrl <- find_guideseq_edit_sites(count_df_cntrl, plot_col = "firebrick", robust_mle = FALSE)
-#' res_trt <- find_guideseq_edit_sites(count_df_trt, plot_col = "dodgerblue3", robust_mle = FALSE, fit = res_cntrl$fitted_model, use_offset = TRUE)
 find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, bin_genome = FALSE, window_size = 1000,
                                      max_chain_link = 50, multiplicity_adjustment = "BH", fit = NULL, use_offset = FALSE, model = "nb",
                                      robust_mle = TRUE, multiplicity_alpha = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10,
@@ -128,20 +119,26 @@ find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, b
   # a. histogram plots
   histogram_plot_list <- make_histogram_plot(y, fit, result_df, model)
 
+
   # b. global scatterplot
   #global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
   #                                              facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
   #global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
   #                                           facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
+
   # c. zoomed-in scatter plots on discovery sites
-  # zoomed_plots <- make_discovery_site_scatterplots(count_df = count_df, result_df = result_df, col = plot_col)
+  n_discoveries <- sum(result_df$significant_hit)
+  zoomed_scatterplots <- lapply(X = seq(1L, n_discoveries), FUN = function(i) {
+    create_umi_hist_plot(result_df = result_df, count_df = count_df, grna_spacer = grna_spacer, pam = pam, i = i)
+  })
 
   # 8. prepare output
   out <- list(result_df = result_df,
               fitted_model = fit,
               count_histogram_linear = histogram_plot_list$plot_untrans,
               count_histogram_log = histogram_plot_list$plot_trans,
-              spacer_alignment = spacer_alignment)
+              spacer_alignment = spacer_alignment,
+              zoomed_scatterplots = zoomed_scatterplots)
 
               #zoomed_scatterplots_linear = zoomed_plots$linear_plots,
               #zoomed_scatterplots_log = zoomed_plots$log_plots,
