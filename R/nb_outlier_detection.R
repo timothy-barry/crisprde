@@ -128,9 +128,13 @@ find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, b
 
   # c. zoomed-in scatter plots on discovery sites
   n_discoveries <- sum(result_df$significant_hit)
-  zoomed_scatterplots <- lapply(X = seq(1L, n_discoveries), FUN = function(i) {
-    create_umi_hist_plot(result_df = result_df, count_df = count_df, grna_spacer = grna_spacer, pam = pam, i = i)
-  })
+  if (n_discoveries >= 1L) {
+    zoomed_scatterplots <- lapply(X = seq(1L, n_discoveries), FUN = function(i) {
+      create_umi_hist_plot(result_df = result_df, count_df = count_df, grna_spacer = grna_spacer, pam = pam, i = i)
+    })
+  } else {
+    zoomed_scatterplots <- list()
+  }
 
   # 8. prepare output
   out <- list(result_df = result_df,
