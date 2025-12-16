@@ -13,6 +13,5 @@ run_read_qc_on_sample(sample_dir)
 Run read QC on sample
 }
 \examples{
-sample_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"),
-"guideseq_elane/count_tables_no_multimap/CD34-WT-Cas9-ELANE-e3SA-GSPneg-5uM-S89_S97/")
+sample_dir <- "/Users/timbarry/research_code/genethoff-nf/demo/results/Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1"
 }

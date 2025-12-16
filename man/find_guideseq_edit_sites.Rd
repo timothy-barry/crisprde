@@ -44,5 +44,4 @@ grna_info <- readRDS(paste0(data_dir, "spacer_info.rds"))
 grna_spacer <- grna_info$spacer_seq
 pam <- grna_info$pam
 res <- find_guideseq_edit_sites(count_df, grna_spacer, pam)
-
 }

@@ -27,7 +27,6 @@
 #' grna_spacer <- grna_info$spacer_seq
 #' pam <- grna_info$pam
 #' res <- find_guideseq_edit_sites(count_df, grna_spacer, pam)
-#'
 find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, bin_genome = FALSE, window_size = 1000,
                                      max_chain_link = 50, multiplicity_adjustment = "BH", fit = NULL, use_offset = FALSE, model = "nb",
                                      robust_mle = TRUE, multiplicity_alpha = 0.1, c_tukey_beta = 10, c_tukey_sigma = 10,
