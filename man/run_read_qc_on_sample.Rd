@@ -4,7 +4,7 @@
 \alias{run_read_qc_on_sample}
 \title{Run read QC on sample}
 \usage{
-run_read_qc_on_sample(sample_dir)
+run_read_qc_on_sample(sample_dirs)
 }
 \arguments{
 \item{sample_dir}{}
@@ -13,5 +13,8 @@ run_read_qc_on_sample(sample_dir)
 Run read QC on sample
 }
 \examples{
-sample_dir <- "/Users/timbarry/research_code/genethoff-nf/demo/results/Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1"
+sample_dirs <- paste0("/Users/timbarry/research_code/genethoff-nf/demo/results/",
+c("Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1", "Jing_AAVS1_n1-10_Donor-Seq_IL2RG_GSP_minus_1"))
+qc_df <- run_read_qc_on_sample(sample_dirs)
+
 }

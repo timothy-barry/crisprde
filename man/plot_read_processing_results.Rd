@@ -4,16 +4,19 @@
 \alias{plot_read_processing_results}
 \title{Plot read processing results}
 \usage{
-plot_read_processing_results(read_proc_df)
+plot_read_processing_results(qc_df, plot_type = "combined")
 }
 \arguments{
-\item{read_proc_df}{the output of \code{run_read_qc_on_sample()}}
+\item{qc_df}{the output of \code{run_read_qc_on_sample()}}
+
+\item{plot_type}{type of plot, either "paired_end", "r2", or "combined"}
 }
 \description{
 Plot read processing results
 }
 \examples{
-sample_dir <- "/Users/timbarry/research_code/genethoff-nf/demo/results/Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1"
-read_proc_df <- run_read_qc_on_sample(sample_dir)
-plot_read_processing_results(read_proc_df)
+sample_dirs <- paste0("/Users/timbarry/research_code/genethoff-nf/demo/results/",
+c("Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1", "Jing_AAVS1_n1-10_Donor-Seq_IL2RG_GSP_minus_1"))
+qc_df <- run_read_qc_on_sample(sample_dirs)
+plot_read_processing_results()
 }

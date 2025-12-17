@@ -216,51 +216,40 @@ make_histogram_plot <- function(y, fit, result_df, model) {
 
 #' Plot read processing results
 #'
-#' @param read_proc_df the output of `run_read_qc_on_sample()`
+#' @param qc_df the output of `run_read_qc_on_sample()`
 #' @param plot_type type of plot, either "paired_end", "r2", or "combined"
 #'
 #' @returns
 #' @export
 #'
 #' @examples
-#' sample_dir <- "/Users/timbarry/research_code/genethoff-nf/demo/results/Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1"
-#' read_proc_df <- run_read_qc_on_sample(sample_dir) |> dplyr::mutate(sample = "AAVS1_n1-10")
-#' plot_read_processing_results(read_proc_df)
-plot_read_processing_results <- function(read_proc_df, plot_type = "combined") {
+#' sample_dirs <- paste0("/Users/timbarry/research_code/genethoff-nf/demo/results/",
+#' c("Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1", "Jing_AAVS1_n1-10_Donor-Seq_IL2RG_GSP_minus_1"))
+#' qc_df <- run_read_qc_on_sample(sample_dirs)
+#' plot_read_processing_results(qc_df = qc_df, plot_type = "combined")
+plot_read_processing_results <- function(qc_df, plot_type = "combined") {
   if (plot_type == "paired_end") {
     # paired-end plot
     plot_levels <- c("n_reads_missing_dsodn_tag", "n_reads_too_short", "n_reads_unaligned", "n_reads_poorly_aligned", "n_reads_multimapped", "n_reads_good_alignment")
     plot_labels <- c("N reads missing dsODN tag", "N reads too short", "N reads unaligned", "N reads poorly aligned", "N reads multimapped", "N reads w/ good alignment")
     plot_colors <- c("#7FFFD4", "#8B2323", "#87CEFA", "#7A378B", "#F0E68C", "#008B00")
-    to_plot <- read_proc_df |>
-      dplyr::filter(category %in% plot_levels) |>
-      dplyr::mutate(Category = factor(x = category, levels = plot_levels, labels = plot_labels))
-    p <- ggplot2::ggplot(to_plot, ggplot2::aes(x = sample, y = n_reads, fill = Category)) +
-      ggplot2::geom_bar(stat = "identity") + ggplot2::theme_bw() + ggplot2::scale_fill_manual(values = plot_colors) +
-      ggplot2::ylab("N reads") + ggplot2::xlab("Sample")
   } else if (plot_type == "r2") {
     # r2 plot
     plot_levels <- c("n_reads_too_short_r2", "n_reads_unaligned_r2", "n_reads_poorly_aligned_r2", "n_reads_multimapped_r2", "n_reads_good_alignment_r2")
     plot_labels <- c("N reads too short (R2)", "N reads unaligned (R2)", "N reads poorly aligned (R2)", "N reads multimapped (R2)", "N reads w/ good alignment (R2)")
     plot_colors <- c("#8B2323","#87CEFA", "#7A378B", "#F0E68C", "#008B00")
-    to_plot <- read_proc_df |>
-      dplyr::filter(category %in% plot_levels) |>
-      dplyr::mutate(Category = factor(x = category, levels = plot_levels, labels = plot_labels))
-    p <- ggplot2::ggplot(data = to_plot, mapping = ggplot2::aes(x = sample, y = n_reads, fill = Category)) +
-      ggplot2::geom_bar(stat = "identity") + ggplot2::theme_bw() + ggplot2::scale_fill_manual(values = plot_colors) +
-      ggplot2::ylab("N reads") + ggplot2::xlab("Sample")
   } else if (plot_type == "combined") {
     # combined plot
-    plot_3_levels <- c("n_reads_missing_dsodn_tag", "n_reads_poorly_aligned", "n_reads_multimapped", "n_reads_good_alignment", "n_reads_too_short_r2", "n_reads_unaligned_r2", "n_reads_poorly_aligned_r2", "n_reads_multimapped_r2", "n_reads_good_alignment_r2")
-    plot_3_labels <- c("N reads missing dsODN tag", "N reads poorly aligned (paired-end)", "N reads multimapped (paired-end)", "N reads w/ good alignment (paired-end)", "N reads too short (R2)", "N reads unaligned (R2)", "N reads poorly aligned (R2)", "N reads multimapped (R2)", "N reads w/ good alignment (R2)")
-    plot_3_colors <- c("#7FFFD4", "#7A378B", "#F0E68C", "#008B00", "#8B2323", "#87CEFA", "#8B5742", "#EEE9E9", "#104E8B")
-    to_plot <- read_proc_df |>
-      dplyr::filter(category %in% plot_3_levels) |>
-      dplyr::mutate(Category = factor(x = category, levels = plot_3_levels, labels = plot_3_labels))
-    p <- ggplot2::ggplot(data = to_plot, mapping = ggplot2::aes(x = sample, y = n_reads, fill = Category)) +
-      ggplot2::geom_bar(stat = "identity") + ggplot2::theme_bw() + ggplot2::ylab("N reads") + ggplot2::scale_fill_manual(values = plot_3_colors) +
-      ggplot2::ylab("N reads") + ggplot2::xlab("Sample")
+    plot_levels <- c("n_reads_missing_dsodn_tag", "n_reads_poorly_aligned", "n_reads_multimapped", "n_reads_good_alignment", "n_reads_too_short_r2", "n_reads_unaligned_r2", "n_reads_poorly_aligned_r2", "n_reads_multimapped_r2", "n_reads_good_alignment_r2")
+    plot_labels <- c("N reads missing dsODN tag", "N reads poorly aligned (paired-end)", "N reads multimapped (paired-end)", "N reads w/ good alignment (paired-end)", "N reads too short (R2)", "N reads unaligned (R2)", "N reads poorly aligned (R2)", "N reads multimapped (R2)", "N reads w/ good alignment (R2)")
+    plot_colors <- c("#7FFFD4", "#7A378B", "#F0E68C", "#008B00", "#8B2323", "#87CEFA", "#8B5742", "#EEE9E9", "#104E8B")
   }
-
+  to_plot <- qc_df |>
+    dplyr::filter(category %in% plot_levels) |>
+    dplyr::mutate(Category = factor(x = category, levels = plot_levels, labels = plot_labels))
+  p <- ggplot2::ggplot(to_plot, ggplot2::aes(x = sample, y = n_reads, fill = Category)) +
+    ggplot2::geom_bar(stat = "identity") + ggplot2::theme_bw() + ggplot2::scale_fill_manual(values = plot_colors) +
+    ggplot2::ylab("N reads") + ggplot2::xlab("Sample") +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90))
   return(p)
 }
