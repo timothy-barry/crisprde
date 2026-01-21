@@ -76,6 +76,7 @@ align_spacer_seq <- function(query_seq, grna_spacer, pam_pattern = "NGG") {
 #' @examples
 #' alignment <- align_spacer_to_genome("ACTGATAGGGGTCGCGGTAG")
 align_spacer_to_genome <- function(grna_spacer, ref_genome = paste0(.get_config_path("REF_GENOME_DIR"), "hg38_main_chroms"), pam = NA) {
+  if (!is.na(pam) && "N" %in% strsplit(x = pam, split = "")[[1]]) pam <- NA
   if (is(grna_spacer, "DNAString")) grna_spacer <- as.character(grna_spacer)
   if (!is.na(pam)) grna_spacer <- paste0(grna_spacer, pam)
 

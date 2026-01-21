@@ -120,14 +120,14 @@ find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, b
 
 
   # b. global scatterplot
-  #global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
-  #                                              facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
-  #global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
-  #                                           facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
+  global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
+                                                facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
+  global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
+                                             facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
 
   # c. zoomed-in scatter plots on discovery sites
   n_discoveries <- sum(result_df$significant_hit)
-  if (n_discoveries >= 1L) {
+  if (n_discoveries >= 1L && !is.null(grna_spacer) && !is.null(pam)) {
     zoomed_scatterplots <- lapply(X = seq(1L, n_discoveries), FUN = function(i) {
       create_umi_hist_plot(result_df = result_df, count_df = count_df, grna_spacer = grna_spacer, pam = pam, i = i)
     })
@@ -141,12 +141,11 @@ find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, b
               count_histogram_linear = histogram_plot_list$plot_untrans,
               count_histogram_log = histogram_plot_list$plot_trans,
               spacer_alignment = spacer_alignment,
-              zoomed_scatterplots = zoomed_scatterplots)
-
-              #zoomed_scatterplots_linear = zoomed_plots$linear_plots,
-              #zoomed_scatterplots_log = zoomed_plots$log_plots,
-              #global_scatterplot_linear = global_scatterplot_linear,
-              #global_scatterplot_log = global_scatterplot_log)
+              zoomed_scatterplots = zoomed_scatterplots,
+              global_scatterplot_linear = global_scatterplot_linear,
+              global_scatterplot_log = global_scatterplot_log)
+  #zoomed_scatterplots_linear = zoomed_plots$linear_plots,
+  #zoomed_scatterplots_log = zoomed_plots$log_plots,
   if (bin_genome) {
     out$binned_counts <- gr_bins
   }

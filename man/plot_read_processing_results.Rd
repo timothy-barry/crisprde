@@ -4,7 +4,11 @@
 \alias{plot_read_processing_results}
 \title{Plot read processing results}
 \usage{
-plot_read_processing_results(qc_df, plot_type = "combined")
+plot_read_processing_results(
+  qc_df,
+  plot_type = "combined",
+  normalize_counts = FALSE
+)
 }
 \arguments{
 \item{qc_df}{the output of \code{run_read_qc_on_sample()}}
@@ -18,5 +22,5 @@ Plot read processing results
 sample_dirs <- paste0("/Users/timbarry/research_code/genethoff-nf/demo/results/",
 c("Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1", "Jing_AAVS1_n1-10_Donor-Seq_IL2RG_GSP_minus_1"))
 qc_df <- run_read_qc_on_sample(sample_dirs)
-plot_read_processing_results()
+plot_read_processing_results(qc_df = qc_df, plot_type = "combined")
 }

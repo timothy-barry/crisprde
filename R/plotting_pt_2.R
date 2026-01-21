@@ -227,7 +227,7 @@ make_histogram_plot <- function(y, fit, result_df, model) {
 #' c("Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1", "Jing_AAVS1_n1-10_Donor-Seq_IL2RG_GSP_minus_1"))
 #' qc_df <- run_read_qc_on_sample(sample_dirs)
 #' plot_read_processing_results(qc_df = qc_df, plot_type = "combined")
-plot_read_processing_results <- function(qc_df, plot_type = "combined") {
+plot_read_processing_results <- function(qc_df, plot_type = "combined", normalize_counts = FALSE) {
   if (plot_type == "paired_end") {
     # paired-end plot
     plot_levels <- c("n_reads_missing_dsodn_tag", "n_reads_too_short", "n_reads_unaligned", "n_reads_poorly_aligned", "n_reads_multimapped", "n_reads_good_alignment")
@@ -247,8 +247,13 @@ plot_read_processing_results <- function(qc_df, plot_type = "combined") {
   to_plot <- qc_df |>
     dplyr::filter(category %in% plot_levels) |>
     dplyr::mutate(Category = factor(x = category, levels = plot_levels, labels = plot_labels))
+  if (normalize_counts) {
+    to_plot <- to_plot |> dplyr::group_by(sample) |> dplyr::mutate(n_reads = n_reads/sum(n_reads))
+  }
+
   p <- ggplot2::ggplot(to_plot, ggplot2::aes(x = sample, y = n_reads, fill = Category)) +
-    ggplot2::geom_bar(stat = "identity") + ggplot2::theme_bw() + ggplot2::scale_fill_manual(values = plot_colors) +
+    ggplot2::geom_bar(stat = "identity") + ggplot2::theme_bw() +
+    ggplot2::scale_fill_manual(values = plot_colors) +
     ggplot2::ylab("N reads") + ggplot2::xlab("Sample") +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90))
   return(p)
