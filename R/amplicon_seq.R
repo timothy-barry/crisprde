@@ -210,7 +210,7 @@ make_mutation_frac_plot <- function(to_plot) {
     ggplot2::geom_point() + ggplot2::theme_bw() + ggplot2::xlab("Sample") + ggplot2::ylab("Mutation fraction") +
     ggplot2::facet_wrap(. ~ amplicon) +
     ggplot2::theme(axis.text.x = ggplot2::element_blank(),
-                   strip.text = element_text(size = 6), legend.position = "bottom") +
+                   strip.text = element_text(size = 8), legend.position = "bottom") +
     ggplot2::scale_color_manual(values = c("firebrick1", "dodgerblue1"))
 }
 

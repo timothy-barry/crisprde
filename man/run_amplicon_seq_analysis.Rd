@@ -8,7 +8,9 @@ run_amplicon_seq_analysis(
   data_list,
   editing_threshold = 0.01,
   nominal_ci_coverage = 0.95,
-  nominal_fdr = 0.1
+  nominal_fdr = 0.1,
+  rho = NULL,
+  tail = "right"
 )
 }
 \arguments{
