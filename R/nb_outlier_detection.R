@@ -120,10 +120,15 @@ find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, b
 
 
   # b. global scatterplot
-  global_scatterplot_linear <- make_scatterplot(count_df = count_df, x_range = NULL,
-                                                facet_on_chr = TRUE, log_trans = FALSE, col = plot_col)
-  global_scatterplot_log <- make_scatterplot(count_df = count_df, x_range = NULL,
-                                             facet_on_chr = TRUE, log_trans = TRUE, col = plot_col)
+  cluster_scatterplot <- TRUE
+  if (cluster_scatterplot) {
+    coord <- (start(clustered_count_df) + end(clustered_count_df))/2
+    global_scatterplot_linear <- data.frame(chr = as.character(GenomicRanges::seqnames(clustered_count_df)),
+                                            coord = coord, count = clustered_count_df$umi_count,
+                                            on_target = clustered_count_df$on_target) |> make_scatterplot_v2()
+  } else {
+    global_scatterplot_linear <- make_scatterplot_v2(count_df)
+  }
 
   # c. zoomed-in scatter plots on discovery sites
   n_discoveries <- sum(result_df$significant_hit)
@@ -142,8 +147,7 @@ find_guideseq_edit_sites <- function(count_df, grna_spacer = NULL, pam = NULL, b
               count_histogram_log = histogram_plot_list$plot_trans,
               spacer_alignment = spacer_alignment,
               zoomed_scatterplots = zoomed_scatterplots,
-              global_scatterplot_linear = global_scatterplot_linear,
-              global_scatterplot_log = global_scatterplot_log)
+              global_scatterplot_linear = global_scatterplot_linear)
   #zoomed_scatterplots_linear = zoomed_plots$linear_plots,
   #zoomed_scatterplots_log = zoomed_plots$log_plots,
   if (bin_genome) {
@@ -226,11 +230,13 @@ collapse_distance_df_based_on_distance <- function(ds, padding = 25L) {
     dplyr::summarize(umi_count = sum(count),
                      chr = chr[1],
                      range_start = coord[1],
-                     range_end = coord[length(coord)])
+                     range_end = coord[length(coord)],
+                     on_target = any(on_target))
   gr <- GenomicRanges::GRanges(seqnames = x$chr,
                                ranges = IRanges::IRanges(x$range_start - padding, end = x$range_end + padding),
                                strand = "*",
                                group_id = x$group_id,
-                               umi_count = x$umi_count)
+                               umi_count = x$umi_count,
+                               on_target = x$on_target)
   return(gr)
 }

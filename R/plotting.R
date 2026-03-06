@@ -157,6 +157,13 @@ make_histogram_plot <- function(y, fit, result_df, model) {
   }
   shifted_density_df <- data.frame(count = x_range, expected = expected)
 
+  # check if discoveries are present; if so, draw line
+  if (any(result_df$significant_hit)) {
+    rejection_thresh <- (result_df |> plyranges::filter(significant_hit))$umi_count |> min()
+  } else {
+    rejection_thresh <- NULL
+  }
+
   # shift
   x_range <- x_range + 1
   y <- y + 1
@@ -164,6 +171,7 @@ make_histogram_plot <- function(y, fit, result_df, model) {
 
   # create untrans histogram
   p_model_untrans <- ggplot2::ggplot(data = data.frame(y = y), mapping = ggplot2::aes(x = y)) +
+    ggplot2::geom_vline(xintercept = rejection_thresh, col = "blue", linetype = "dashed") +
     ggplot2::geom_histogram(binwidth = 1, col = "black", fill = "white") +
     ggplot2::theme_bw() +
     ggplot2::geom_line(
@@ -174,11 +182,6 @@ make_histogram_plot <- function(y, fit, result_df, model) {
     ggplot2::ylab("Frequency") +
     ggplot2::ggtitle("Linear y-axis") + ggplot2::xlab("UMI count")
 
-  # check if discoveries are present; if so, draw line
-  if (any(result_df$significant_hit)) {
-    rejection_thresh <- (result_df |> plyranges::filter(significant_hit))$umi_count |> min()
-    p_model_untrans <- p_model_untrans + ggplot2::geom_vline(xintercept = rejection_thresh, col = "blue", linetype = "dashed")
-  }
   p_model_trans <- p_model_untrans +
     ggplot2::scale_y_continuous(transform = scales::pseudo_log_trans(), breaks = c(0, 10^seq(0, 5))) +
     ggplot2::ggtitle("Log y-axis")
@@ -243,4 +246,36 @@ make_discovery_site_scatterplots_dm <- function(res_df, clustered_res_df, plot_w
     out <- list()
   }
   return(out)
+}
+
+
+make_scatterplot_v2 <- function(count_df) {
+  # set up labels
+  chr_levels <- c(seq(1L, 22L), c("X", "Y", "M"))
+  to_plot <- count_df |>
+    dplyr::mutate(base_type = ifelse(on_target, "On target", "Off target"),
+                  chr = gsub(x = chr, pattern = "chr", replacement = "") |>
+                    factor(levels = chr_levels, labels = chr_levels))
+
+  p <- ggplot2::ggplot(to_plot,
+                       mapping = ggplot2::aes(x = coord, y = count, col = base_type)) +
+    ggplot2::geom_point(size = 1) +
+    ggplot2::theme_bw() + ggplot2::xlab("Chromosome position") +
+    ggplot2::theme(panel.grid.major.x = ggplot2::element_blank(),
+                   panel.grid.minor.x = ggplot2::element_blank()) +
+    ggplot2::facet_grid(. ~ chr, scales = "free_x", drop = FALSE) +
+    ggplot2::theme(axis.text.x = ggplot2::element_blank(),
+                   axis.ticks.x = ggplot2::element_blank(),
+                   panel.spacing = grid::unit(0, "lines"),
+                   strip.placement = "outside",
+                   strip.background = ggplot2::element_blank(),
+                   strip.text.x = ggplot2::element_text(),
+                   panel.border = ggplot2::element_rect(color = "grey80", fill = NA),
+                   legend.title = ggplot2::element_blank(),
+                   panel.grid.major.y = ggplot2::element_blank(),
+                   panel.grid.minor.y = ggplot2::element_blank(),
+                   legend.position = "bottom") +
+    ggplot2::ylab("UMI count") +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.5)) +
+    ggplot2::scale_color_manual(values = c("black", "forestgreen"))
 }

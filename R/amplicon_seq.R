@@ -67,44 +67,67 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' result_df <- run_amplicon_seq_analysis(data_list) |>
 #'   dplyr::mutate(amplicon_id = factor(amplicon_id, labels = seq_len(p), levels = seq_len(p)))
 #' create_amplicon_seq_ci_plot(result_df)
-run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nominal_ci_coverage = 0.95, nominal_fdr = 0.1, rho = NULL, tail = "right") {
-  r <- nrow(data_list$n_mat_trt)
-  p <- ncol(data_list$n_mat_trt)
+run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nominal_ci_coverage = 0.95, nominal_fdr = 0.1, global_rho = TRUE, rho = NULL, tail = "right") {
+  n_mat_trt <- data_list$n_mat_trt
+  n_mat_cntrl <- data_list$n_mat_cntrl
+  k_mat_trt <- data_list$k_mat_trt
+  k_mat_cntrl <- data_list$k_mat_cntrl
+  r <- nrow(n_mat_trt)
+  p <- ncol(n_mat_trt)
 
   # first, estimate of pi for each (amplicon, condition) pair
   estimate_pi_per_amplicon <- function(n_mat, k_mat) colSums(k_mat)/colSums(n_mat)
-  pi_hat_trt_per_amplicon <- estimate_pi_per_amplicon(n_mat = data_list$n_mat_trt, k_mat = data_list$k_mat_trt)
-  pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = data_list$n_mat_cntrl, k_mat = data_list$k_mat_cntrl)
+  pi_hat_trt_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_trt, k_mat = k_mat_trt)
+  pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
 
   # second, estimate rho via method of moments estimator
   if (is.null(rho)) {
-    n_vect <- c(as.integer(data_list$n_mat_trt), as.integer(data_list$n_mat_cntrl))
-    k_vect <- c(as.integer(data_list$k_mat_trt), as.integer(data_list$k_mat_cntrl))
-    pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon, each = r), rep(pi_hat_cntrl_per_amplicon, each = r))
-    gamma <- 2 * p * (r - 1)
-    shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
-      sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
+    if (global_rho) {
+      # assuming a global rho across all amplicons; estimate a single dispersion parameter
+      n_vect <- c(as.integer(n_mat_trt), as.integer(n_mat_cntrl))
+      k_vect <- c(as.integer(k_mat_trt), as.integer(k_mat_cntrl))
+      pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon, each = r), rep(pi_hat_cntrl_per_amplicon, each = r))
+      gamma <- 2 * p * (r - 1)
+      shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
+        sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
+      }
+      rho_hat <- uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
+      rho_hat_per_amplicon <- rep(rho_hat, p)
+    } else {
+      # assuming amplicon-specific rhos; estimate a separate rho for each amplicon
+      rho_hat_per_amplicon <- sapply(X = seq_len(p), FUN = function(amplicon_idx) {
+        n_vect <- c(n_mat_trt[,amplicon_idx], n_mat_cntrl[,amplicon_idx])
+        k_vect <- c(k_mat_trt[,amplicon_idx], k_mat_cntrl[,amplicon_idx])
+        gamma <- 2 * r - 2
+        pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon[amplicon_idx], each = r),
+                         rep(pi_hat_cntrl_per_amplicon[amplicon_idx], each = r))
+        shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
+          sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
+        }
+        uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
+      })
+      # empirical bayes shrinkage here
     }
-    rho_hat <- uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
-  } else{
+  } else {
     rho_hat <- rho
   }
 
   # third, compute the standard error of the pi_hats
-  compute_pi_hat_ses <- function(n_mat, pi_hat_per_amplicon, rho_hat) {
+  compute_pi_hat_ses <- function(n_mat, pi_hat_per_amplicon, rho_hat_per_amplicon) {
     sapply(X = seq_len(p), FUN = function(i) {
       n <- n_mat[,i]
       n_tot <- sum(n)
       pi_hat <- pi_hat_per_amplicon[[i]]
+      rho_hat <- rho_hat_per_amplicon[i]
       sqrt(sum(n * pi_hat * (1 - pi_hat) * (1 + (n - 1) * rho_hat)))/n_tot
     })
   }
-  pi_hat_se_trt_per_amplicon <- compute_pi_hat_ses(n_mat = data_list$n_mat_trt,
+  pi_hat_se_trt_per_amplicon <- compute_pi_hat_ses(n_mat = n_mat_trt,
                                                    pi_hat_per_amplicon = pi_hat_trt_per_amplicon,
-                                                   rho_hat = rho_hat)
-  pi_hat_se_cntrl_per_amplicon <- compute_pi_hat_ses(n_mat = data_list$n_mat_cntrl,
+                                                   rho_hat_per_amplicon = rho_hat_per_amplicon)
+  pi_hat_se_cntrl_per_amplicon <- compute_pi_hat_ses(n_mat = n_mat_cntrl,
                                                      pi_hat_per_amplicon = pi_hat_cntrl_per_amplicon,
-                                                     rho_hat = rho_hat)
+                                                     rho_hat_per_amplicon = rho_hat_per_amplicon)
 
   # fourth, compute the theta_hats (editing rate estimates)
   theta_hat_per_amplicon <- (pi_hat_trt_per_amplicon - pi_hat_cntrl_per_amplicon)/(1 - pi_hat_cntrl_per_amplicon)
@@ -136,8 +159,9 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nomin
   pi_hat_cntrl <- pi_hat_cntrl_per_amplicon
 
   # return output
-  to_return <- data.frame(amplicon_id = colnames(data_list$n_mat_trt),
+  to_return <- data.frame(amplicon_id = colnames(n_mat_trt),
                           theta_hat = theta_hat_per_amplicon,
+                          rho_hat = rho_hat_per_amplicon,
                           theta_hat_clipped = pmax(pmin(theta_hat_per_amplicon, 1), 0),
                           theta_hat_se = theta_hat_se_per_amplicon,
                           theta_hat_lower_ci = lower_theta_ci_per_amplicon,
@@ -149,7 +173,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nomin
                           p_value = pmax(p_val_per_amplicon, 1e-250),
                           significant = significant)
   rownames(to_return) <- NULL
-  return(list(result_df = to_return, rho_hat = rho_hat))
+  return(to_return)
 }
 
 run_fisher_exact_test <- function(data_list, nominal_fdr = 0.1, alternative = "greater") {
