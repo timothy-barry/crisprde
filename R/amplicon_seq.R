@@ -107,7 +107,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
                                                               pi_hat_cntrl_per_amplicon)
       if (remove_outlier_dispersions) {
         rho_hat_per_amplicon <- remove_outlier_dispersions_and_shrink_to_median(pilot_rho_hat_per_amplicon = pilot_rho_hat_per_amplicon,
-                                                                                outlier_mad_thresh = 5)
+                                                                                outlier_mad_thresh = outlier_mad_thresh)
       }
     }
   } else {
@@ -205,8 +205,8 @@ remove_outlier_dispersions_and_shrink_to_median <- function(pilot_rho_hat_per_am
   my_mad <- stats::mad(pilot_rho_hat_per_amplicon)
   outlier_thresh <- my_median + outlier_mad_thresh * my_mad
   rho_hat_shrunk <- median(pilot_rho_hat_per_amplicon[pilot_rho_hat_per_amplicon < outlier_thresh])
-  rho_hat_per_amplicon[pilot_rho_hat_per_amplicon < outlier_thresh] <- rho_hat_shrunk
-  return(rho_hat_per_amplicon)
+  pilot_rho_hat_per_amplicon[pilot_rho_hat_per_amplicon < outlier_thresh] <- rho_hat_shrunk
+  return(pilot_rho_hat_per_amplicon)
 }
 
 

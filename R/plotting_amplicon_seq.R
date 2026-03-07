@@ -1,9 +1,10 @@
-
-create_amplicon_seq_ci_plot <- function(result_df) {
-  my_plot <- ggplot2::ggplot(data = result_df, mapping = ggplot2::aes(x = amplicon_id, y = theta_hat_clipped)) +
+create_amplicon_seq_ci_plot <- function(result_df, ylim = NULL) {
+  my_plot <- ggplot2::ggplot(data = result_df,
+                             mapping = ggplot2::aes(x = amplicon_id, y = theta_hat_clipped)) +
     ggplot2::geom_point() + ggplot2::theme_bw() +
     ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_hat_lower_ci,
                                                   ymax = theta_hat_upper_ci, width = 0)) +
+    ggplot2::scale_y_continuous(labels = label_percent(), limits = ylim) +
     ggplot2::xlab("Amplicon") + ggplot2::ylab("Estimated editing rate")
 }
 
