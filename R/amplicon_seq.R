@@ -7,7 +7,7 @@
 #' @param n_amplicons_nonzero_editing (integer) number of amplicons
 #' @param sample_size_mu (positive scalar) mean sample size
 #' @param sample_size_theta (positive scalar) size (i.e., overdispersion) parameter for sample size
-#' @param beta_binom_rho (positive scalar) dispersion parameter for the beta-binomial distribution
+#' @param beta_binom_rho (positive scalar or vector) dispersion parameter for the beta-binomial distribution
 #'
 #' @returns
 #' @export
@@ -31,9 +31,10 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
   n_mat_trt <- n_mat_list[[1]]; n_mat_cntrl <- n_mat_list[[2]]
 
   # generate k_mats
+  if (length(beta_binom_rho) == 1L) beta_binom_rho <- rep(beta_binom_rho, p)
   generate_k_mat <- function(n_mat, pi_vect, beta_binom_rho, p, r) {
     k_mat <- sapply(X = seq_len(p), FUN = function(j) {
-      VGAM::rbetabinom(n = r, size = n_mat[,j], prob = pi_vect[j], rho = beta_binom_rho)
+      VGAM::rbetabinom(n = r, size = n_mat[,j], prob = pi_vect[j], rho = beta_binom_rho[j])
     })
     return(k_mat)
   }
@@ -62,12 +63,16 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' @export
 #'
 #' @examples
-#' data_list <- generate_synthetic_amplicon_seq_data(p = 20L, r = 3L, pi_cntrl = 0.05, editing_rate = 0.1,
-#'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho = 0.01)
+#' p <- 20L
+#' beta_binom_rho <- c(0.01, rep(5e-4, times = p - 1L))
+#' data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.1,
+#'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho)
 #' result_df <- run_amplicon_seq_analysis(data_list) |>
 #'   dplyr::mutate(amplicon_id = factor(amplicon_id, labels = seq_len(p), levels = seq_len(p)))
 #' create_amplicon_seq_ci_plot(result_df)
-run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nominal_ci_coverage = 0.95, nominal_fdr = 0.1, global_rho = TRUE, rho = NULL, tail = "right") {
+run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nominal_ci_coverage = 0.95,
+                                      nominal_fdr = 0.1, global_rho = FALSE, rho = NULL, tail = "right",
+                                      remove_outlier_dispersions = TRUE, outlier_mad_thresh = 4) {
   n_mat_trt <- data_list$n_mat_trt
   n_mat_cntrl <- data_list$n_mat_cntrl
   k_mat_trt <- data_list$k_mat_trt
@@ -81,6 +86,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nomin
   pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
 
   # second, estimate rho via method of moments estimator
+  pilot_rho_hat_per_amplicon <- NA
   if (is.null(rho)) {
     if (global_rho) {
       # assuming a global rho across all amplicons; estimate a single dispersion parameter
@@ -94,22 +100,18 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nomin
       rho_hat <- uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
       rho_hat_per_amplicon <- rep(rho_hat, p)
     } else {
-      # assuming amplicon-specific rhos; estimate a separate rho for each amplicon
-      rho_hat_per_amplicon <- sapply(X = seq_len(p), FUN = function(amplicon_idx) {
-        n_vect <- c(n_mat_trt[,amplicon_idx], n_mat_cntrl[,amplicon_idx])
-        k_vect <- c(k_mat_trt[,amplicon_idx], k_mat_cntrl[,amplicon_idx])
-        gamma <- 2 * r - 2
-        pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon[amplicon_idx], each = r),
-                         rep(pi_hat_cntrl_per_amplicon[amplicon_idx], each = r))
-        shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
-          sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
-        }
-        uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
-      })
-      # empirical bayes shrinkage here
+      # obtain pilot estimate of rho for each amplicon
+      pilot_rho_hat_per_amplicon <- estimate_rho_per_amplicon(n_mat_trt, n_mat_cntrl,
+                                                              k_mat_trt, k_mat_cntrl, p, r,
+                                                              pi_hat_trt_per_amplicon,
+                                                              pi_hat_cntrl_per_amplicon)
+      if (remove_outlier_dispersions) {
+        rho_hat_per_amplicon <- remove_outlier_dispersions_and_shrink_to_median(pilot_rho_hat_per_amplicon = pilot_rho_hat_per_amplicon,
+                                                                                outlier_mad_thresh = 5)
+      }
     }
   } else {
-    rho_hat <- rho
+    rho_hat_per_amplicon <- rep(rho, p)
   }
 
   # third, compute the standard error of the pi_hats
@@ -162,6 +164,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nomin
   to_return <- data.frame(amplicon_id = colnames(n_mat_trt),
                           theta_hat = theta_hat_per_amplicon,
                           rho_hat = rho_hat_per_amplicon,
+                          pilot_rho_hat = pilot_rho_hat_per_amplicon,
                           theta_hat_clipped = pmax(pmin(theta_hat_per_amplicon, 1), 0),
                           theta_hat_se = theta_hat_se_per_amplicon,
                           theta_hat_lower_ci = lower_theta_ci_per_amplicon,
@@ -175,6 +178,37 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.01, nomin
   rownames(to_return) <- NULL
   return(to_return)
 }
+
+
+estimate_rho_per_amplicon <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl, p, r,
+                                      pi_hat_trt_per_amplicon, pi_hat_cntrl_per_amplicon) {
+  sapply(X = seq_len(p), FUN = function(amplicon_idx) {
+    n_vect <- c(n_mat_trt[,amplicon_idx], n_mat_cntrl[,amplicon_idx])
+    k_vect <- c(k_mat_trt[,amplicon_idx], k_mat_cntrl[,amplicon_idx])
+    gamma <- 2 * r - 2
+    pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon[amplicon_idx], each = r),
+                     rep(pi_hat_cntrl_per_amplicon[amplicon_idx], each = r))
+    shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
+      sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
+    }
+    if (shifted_pearson_stat(0, n_vect, k_vect, pi_hat_vect, gamma) <= 0) {
+      0
+    } else {
+      uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
+    }
+  })
+}
+
+
+remove_outlier_dispersions_and_shrink_to_median <- function(pilot_rho_hat_per_amplicon, outlier_mad_thresh) {
+  my_median <- median(pilot_rho_hat_per_amplicon)
+  my_mad <- stats::mad(pilot_rho_hat_per_amplicon)
+  outlier_thresh <- my_median + outlier_mad_thresh * my_mad
+  rho_hat_shrunk <- median(pilot_rho_hat_per_amplicon[pilot_rho_hat_per_amplicon < outlier_thresh])
+  rho_hat_per_amplicon[pilot_rho_hat_per_amplicon < outlier_thresh] <- rho_hat_shrunk
+  return(rho_hat_per_amplicon)
+}
+
 
 run_fisher_exact_test <- function(data_list, nominal_fdr = 0.1, alternative = "greater") {
   n_amplicons <- ncol(data_list$n_mat_trt)
@@ -190,56 +224,4 @@ run_fisher_exact_test <- function(data_list, nominal_fdr = 0.1, alternative = "g
   significant <- p.adjust(p = p_vals, method = "BH") <= nominal_fdr
   to_return <- data.frame(amplicon_id = colnames(data_list$n_mat_trt),
                           p_value = p_vals, significant = significant)
-}
-
-create_amplicon_seq_ci_plot <- function(result_df) {
-  my_plot <- ggplot2::ggplot(data = result_df, mapping = ggplot2::aes(x = amplicon_id, y = theta_hat_clipped)) +
-    ggplot2::geom_point() + ggplot2::theme_bw() +
-    ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_hat_lower_ci,
-                                                  ymax = theta_hat_upper_ci, width = 0)) +
-    ggplot2::xlab("Amplicon") + ggplot2::ylab("Estimated editing rate")
-}
-
-create_amplicon_seq_p_value_plot <- function(result_df, min_p_value = 1e-250) {
-  ggplot2::ggplot(data = result_df |>
-                    dplyr::mutate(Significant = significant,
-                                  p_value = pmax(p_value, min_p_value)),
-         mapping = ggplot2::aes(x = amplicon_id, y = p_value, col = Significant)) +
-    ggplot2::geom_point() + ggplot2::theme_bw(base_size = 9) + ggplot2::scale_color_manual(values = c("black", "dodgerblue2")) +
-    ggplot2::xlab("Amplicon") + ggplot2::scale_y_continuous(trans = sceptre:::revlog_trans()) +
-    ggplot2::ylab("p-value")
-}
-
-convert_data_list_into_mutation_frac_df <- function(data_list) {
-  compute_mutation_frac <- function(n_mat, k_mat) {
-    as.data.frame(k_mat/n_mat) |>
-      tidyr::pivot_longer(cols = tidyr::everything(),
-                          names_to = "amplicon", values_to = "mutation_frac") |>
-      dplyr::arrange(amplicon)
-  }
-  mutation_frac_df <- rbind(compute_mutation_frac(data_list$n_mat_trt, data_list$k_mat_trt) |>
-                              dplyr::mutate(Condition = "Treated"),
-                            compute_mutation_frac(data_list$n_mat_cntrl, data_list$k_mat_cntrl) |>
-                              dplyr::mutate(Condition = "Control"))
-
-  n_vect <- colSums(data_list$n_mat_trt) + colSums(data_list$n_mat_cntrl)
-  n_reads_df <- data.frame(amplicon = names(n_vect), n_reads = setNames(n_vect, NULL))
-
-  return(list(mutation_frac_df = mutation_frac_df, n_reads_df = n_reads_df))
-}
-
-make_mutation_frac_plot <- function(to_plot) {
-  ggplot2::ggplot(data = to_plot,
-                  mapping = ggplot2::aes(x = Condition, y = mutation_frac, col = Condition)) +
-    ggplot2::geom_point() + ggplot2::theme_bw() + ggplot2::xlab("Sample") + ggplot2::ylab("Mutation fraction") +
-    ggplot2::facet_wrap(. ~ amplicon) +
-    ggplot2::theme(axis.text.x = ggplot2::element_blank(),
-                   strip.text = element_text(size = 8), legend.position = "bottom") +
-    ggplot2::scale_color_manual(values = c("firebrick1", "dodgerblue1"))
-}
-
-make_n_reads_plot <- function(to_plot) {
-  ggplot2::ggplot(data = to_plot,
-                  mapping = ggplot2::aes(x = amplicon, y = n_reads)) +
-    ggplot2::geom_point() + ggplot2::theme_bw()
 }

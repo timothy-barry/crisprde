@@ -6,11 +6,14 @@
 \usage{
 run_amplicon_seq_analysis(
   data_list,
-  editing_threshold = 0.01,
+  editing_threshold = 0.001,
   nominal_ci_coverage = 0.95,
   nominal_fdr = 0.1,
+  global_rho = FALSE,
   rho = NULL,
-  tail = "right"
+  tail = "right",
+  remove_outlier_dispersions = TRUE,
+  outlier_mad_thresh = 4
 )
 }
 \arguments{
@@ -25,8 +28,10 @@ a data frame containing
 Run amplicon-seq analysis
 }
 \examples{
-data_list <- generate_synthetic_amplicon_seq_data(p = 20L, r = 3L, pi_cntrl = 0.05, editing_rate = 0.1,
-                                                  n_amplicons_nonzero_editing = 2L, beta_binom_rho = 0.01)
+p <- 20L
+beta_binom_rho <- c(0.01, rep(5e-4, times = p - 1L))
+data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.1,
+                                                  n_amplicons_nonzero_editing = 2L, beta_binom_rho)
 result_df <- run_amplicon_seq_analysis(data_list) |>
   dplyr::mutate(amplicon_id = factor(amplicon_id, labels = seq_len(p), levels = seq_len(p)))
 create_amplicon_seq_ci_plot(result_df)

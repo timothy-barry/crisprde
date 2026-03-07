@@ -26,7 +26,7 @@ generate_synthetic_amplicon_seq_data(
 
 \item{n_amplicons_nonzero_editing}{(integer) number of amplicons}
 
-\item{beta_binom_rho}{(positive scalar) dispersion parameter for the beta-binomial distribution}
+\item{beta_binom_rho}{(positive scalar or vector) dispersion parameter for the beta-binomial distribution}
 
 \item{sample_size_mu}{(positive scalar) mean sample size}
 
