@@ -4,7 +4,7 @@ create_amplicon_seq_ci_plot <- function(result_df, ylim = NULL) {
     ggplot2::geom_point() + ggplot2::theme_bw() +
     ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_hat_lower_ci,
                                                   ymax = theta_hat_upper_ci, width = 0)) +
-    ggplot2::scale_y_continuous(labels = label_percent(), limits = ylim) +
+    ggplot2::scale_y_continuous(labels = scales::label_percent(), limits = ylim) +
     ggplot2::xlab("Amplicon") + ggplot2::ylab("Estimated editing rate")
 }
 

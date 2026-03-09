@@ -63,8 +63,9 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' @export
 #'
 #' @examples
+#' set.seed(4)
 #' p <- 20L
-#' beta_binom_rho <- c(0.01, rep(5e-4, times = p - 1L))
+#' beta_binom_rho <- c(0.05, rep(5e-4, times = p - 1L))
 #' data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.1,
 #'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho)
 #' result_df <- run_amplicon_seq_analysis(data_list) |>
@@ -72,7 +73,7 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' create_amplicon_seq_ci_plot(result_df)
 run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nominal_ci_coverage = 0.95,
                                       nominal_fdr = 0.1, global_rho = FALSE, rho = NULL, tail = "right",
-                                      remove_outlier_dispersions = TRUE, outlier_mad_thresh = 4) {
+                                      outlier_mad_thresh = 4) {
   n_mat_trt <- data_list$n_mat_trt
   n_mat_cntrl <- data_list$n_mat_cntrl
   k_mat_trt <- data_list$k_mat_trt
@@ -86,29 +87,29 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
   pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
 
   # second, estimate rho via method of moments estimator
-  pilot_rho_hat_per_amplicon <- NA
   if (is.null(rho)) {
     if (global_rho) {
-      # assuming a global rho across all amplicons; estimate a single dispersion parameter
-      n_vect <- c(as.integer(n_mat_trt), as.integer(n_mat_cntrl))
-      k_vect <- c(as.integer(k_mat_trt), as.integer(k_mat_cntrl))
-      pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon, each = r), rep(pi_hat_cntrl_per_amplicon, each = r))
-      gamma <- 2 * p * (r - 1)
-      shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
-        sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
-      }
-      rho_hat <- uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
-      rho_hat_per_amplicon <- rep(rho_hat, p)
+      rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
+                                                  k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
+                                                  pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
+                                                  pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
+      pilot_rho_hat_per_amplicon <- NA
+
     } else {
       # obtain pilot estimate of rho for each amplicon
-      pilot_rho_hat_per_amplicon <- estimate_rho_per_amplicon(n_mat_trt, n_mat_cntrl,
-                                                              k_mat_trt, k_mat_cntrl, p, r,
-                                                              pi_hat_trt_per_amplicon,
-                                                              pi_hat_cntrl_per_amplicon)
-      if (remove_outlier_dispersions) {
-        rho_hat_per_amplicon <- remove_outlier_dispersions_and_shrink_to_median(pilot_rho_hat_per_amplicon = pilot_rho_hat_per_amplicon,
-                                                                                outlier_mad_thresh = outlier_mad_thresh)
-      }
+      rho_hat_per_amplicon <-
+        pilot_rho_hat_per_amplicon <- estimate_rho_per_amplicon(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
+                                                                k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
+                                                                pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
+                                                                pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
+      disp_ok_v <- flag_outlier_dispersions(pilot_rho_hat_per_amplicon = pilot_rho_hat_per_amplicon,
+                                            outlier_mad_thresh = outlier_mad_thresh)
+      updated_rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt[,disp_ok_v],
+                                                          n_mat_cntrl = n_mat_cntrl[,disp_ok_v],
+                                                          k_mat_trt = k_mat_trt[,disp_ok_v], k_mat_cntrl = k_mat_cntrl[,disp_ok_v],
+                                                          pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon[disp_ok_v],
+                                                          pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon[disp_ok_v])
+      rho_hat_per_amplicon[disp_ok_v] <- updated_rho_hat_per_amplicon
     }
   } else {
     rho_hat_per_amplicon <- rep(rho, p)
@@ -180,8 +181,27 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
 }
 
 
-estimate_rho_per_amplicon <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl, p, r,
+estimate_global_rho <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl,
+                                pi_hat_trt_per_amplicon, pi_hat_cntrl_per_amplicon) {
+  n_vect <- c(as.integer(n_mat_trt), as.integer(n_mat_cntrl))
+  k_vect <- c(as.integer(k_mat_trt), as.integer(k_mat_cntrl))
+  pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon, each = r), rep(pi_hat_cntrl_per_amplicon, each = r))
+  p <- ncol(n_mat_trt)
+  r <- nrow(n_mat_trt)
+  gamma <- 2 * p * (r - 1)
+  shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
+    sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
+  }
+  rho_hat <- uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
+  rho_hat_per_amplicon <- rep(rho_hat, p)
+  return(rho_hat_per_amplicon)
+}
+
+
+estimate_rho_per_amplicon <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl,
                                       pi_hat_trt_per_amplicon, pi_hat_cntrl_per_amplicon) {
+  p <- ncol(n_mat_trt)
+  r <- nrow(n_mat_trt)
   sapply(X = seq_len(p), FUN = function(amplicon_idx) {
     n_vect <- c(n_mat_trt[,amplicon_idx], n_mat_cntrl[,amplicon_idx])
     k_vect <- c(k_mat_trt[,amplicon_idx], k_mat_cntrl[,amplicon_idx])
@@ -197,6 +217,15 @@ estimate_rho_per_amplicon <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_c
       uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
     }
   })
+}
+
+
+flag_outlier_dispersions <- function(pilot_rho_hat_per_amplicon, outlier_mad_thresh) {
+  my_median <- median(pilot_rho_hat_per_amplicon)
+  my_mad <- stats::mad(pilot_rho_hat_per_amplicon)
+  outlier_thresh <- my_median + outlier_mad_thresh * my_mad
+  ok_disp <- pilot_rho_hat_per_amplicon < outlier_thresh
+  return(ok_disp)
 }
 
 

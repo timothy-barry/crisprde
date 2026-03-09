@@ -12,7 +12,6 @@ run_amplicon_seq_analysis(
   global_rho = FALSE,
   rho = NULL,
   tail = "right",
-  remove_outlier_dispersions = TRUE,
   outlier_mad_thresh = 4
 )
 }
@@ -28,8 +27,9 @@ a data frame containing
 Run amplicon-seq analysis
 }
 \examples{
+set.seed(4)
 p <- 20L
-beta_binom_rho <- c(0.01, rep(5e-4, times = p - 1L))
+beta_binom_rho <- c(0.05, rep(5e-4, times = p - 1L))
 data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.1,
                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho)
 result_df <- run_amplicon_seq_analysis(data_list) |>
