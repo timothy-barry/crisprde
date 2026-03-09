@@ -1,4 +1,23 @@
-create_amplicon_seq_ci_plot <- function(result_df, ylim = NULL) {
+make_pilot_dispersion_plot <- function(result_df) {
+  ggplot(dispersion_df, aes(x = result_df)) +
+    theme_bw() +
+    geom_point(aes(y = rho_hat, shape = "Final"), size = 2.1, color = "grey35") +
+    geom_point(aes(y = pilot_rho_hat, shape = "Pilot"), size = 2.1, color = "dodgerblue3") +
+    geom_hline(yintercept = outlier_thresh, color = "firebrick", linetype = "dashed") +
+    scale_shape_manual(values = c("Pilot" = 1, "Final" = 16)) +
+    scale_y_continuous(
+      trans = scales::pseudo_log_trans(sigma = 5e-5, base = 10),
+      breaks = c(0, 1e-4, 1e-3, 1e-2, 1e-1)
+    ) +
+    xlab("Amplicon") +
+    ylab(expression(hat(rho))) +
+    labs(shape = NULL) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+  plot(dispersion_plot)
+}
+
+make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL) {
   my_plot <- ggplot2::ggplot(data = result_df,
                              mapping = ggplot2::aes(x = amplicon_id, y = theta_hat_clipped)) +
     ggplot2::geom_point() + ggplot2::theme_bw() +
@@ -8,7 +27,7 @@ create_amplicon_seq_ci_plot <- function(result_df, ylim = NULL) {
     ggplot2::xlab("Amplicon") + ggplot2::ylab("Estimated editing rate")
 }
 
-create_amplicon_seq_p_value_plot <- function(result_df, min_p_value = 1e-250) {
+make_amplicon_seq_p_value_plot <- function(result_df, min_p_value = 1e-250) {
   ggplot2::ggplot(data = result_df |>
                     dplyr::mutate(Significant = significant,
                                   p_value = pmax(p_value, min_p_value)),

@@ -78,8 +78,6 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
   n_mat_cntrl <- data_list$n_mat_cntrl
   k_mat_trt <- data_list$k_mat_trt
   k_mat_cntrl <- data_list$k_mat_cntrl
-  r <- nrow(n_mat_trt)
-  p <- ncol(n_mat_trt)
 
   # first, estimate of pi for each (amplicon, condition) pair
   estimate_pi_per_amplicon <- function(n_mat, k_mat) colSums(k_mat)/colSums(n_mat)
@@ -87,14 +85,14 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
   pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
 
   # second, estimate rho via method of moments estimator
+  pilot_rho_hat_per_amplicon <- NA
+  dispersion_outlier <- NA
   if (is.null(rho)) {
     if (global_rho) {
       rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
                                                   k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
                                                   pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
                                                   pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
-      pilot_rho_hat_per_amplicon <- NA
-      dispersion_outlier <- NA
     } else {
       # obtain pilot estimate of rho for each amplicon
       rho_hat_per_amplicon <-
@@ -113,12 +111,12 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
       dispersion_outlier <- !disp_ok_v
     }
   } else {
-    rho_hat_per_amplicon <- rep(rho, p)
+    rho_hat_per_amplicon <- rep(rho, ncol(n_mat_trt))
   }
 
   # third, compute the standard error of the pi_hats
   compute_pi_hat_ses <- function(n_mat, pi_hat_per_amplicon, rho_hat_per_amplicon) {
-    sapply(X = seq_len(p), FUN = function(i) {
+    sapply(X = seq_len(ncol(n_mat)), FUN = function(i) {
       n <- n_mat[,i]
       n_tot <- sum(n)
       pi_hat <- pi_hat_per_amplicon[[i]]
@@ -137,7 +135,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
   theta_hat_per_amplicon <- (pi_hat_trt_per_amplicon - pi_hat_cntrl_per_amplicon)/(1 - pi_hat_cntrl_per_amplicon)
 
   # fifth, compute the theta_hat standard errors
-  theta_hat_se_per_amplicon <- sapply(X = seq_len(p), FUN = function(i) {
+  theta_hat_se_per_amplicon <- sapply(X = seq_len(ncol(n_mat_trt)), FUN = function(i) {
     pi_hat_trt <- pi_hat_trt_per_amplicon[[i]]
     pi_hat_cntrl <- pi_hat_cntrl_per_amplicon[[i]]
     pi_hat_se_trt <- pi_hat_se_trt_per_amplicon[[i]]
@@ -187,14 +185,18 @@ estimate_global_rho <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl,
                                 pi_hat_trt_per_amplicon, pi_hat_cntrl_per_amplicon) {
   n_vect <- c(as.integer(n_mat_trt), as.integer(n_mat_cntrl))
   k_vect <- c(as.integer(k_mat_trt), as.integer(k_mat_cntrl))
-  pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon, each = r), rep(pi_hat_cntrl_per_amplicon, each = r))
   p <- ncol(n_mat_trt)
   r <- nrow(n_mat_trt)
+  pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon, each = r), rep(pi_hat_cntrl_per_amplicon, each = r))
   gamma <- 2 * p * (r - 1)
   shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
     sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
   }
-  rho_hat <- uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
+  rho_hat <- if (shifted_pearson_stat(0, n_vect, k_vect, pi_hat_vect, gamma) <= 0) {
+    0
+  } else {
+    uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
+  }
   rho_hat_per_amplicon <- rep(rho_hat, p)
   return(rho_hat_per_amplicon)
 }
@@ -226,7 +228,7 @@ flag_outlier_dispersions <- function(pilot_rho_hat_per_amplicon, outlier_mad_thr
   my_median <- median(pilot_rho_hat_per_amplicon)
   my_mad <- stats::mad(pilot_rho_hat_per_amplicon)
   outlier_thresh <- my_median + outlier_mad_thresh * my_mad
-  ok_disp <- pilot_rho_hat_per_amplicon < outlier_thresh
+  ok_disp <- pilot_rho_hat_per_amplicon <= outlier_thresh
   return(ok_disp)
 }
 
