@@ -11,6 +11,7 @@ generate_synthetic_amplicon_seq_data(
   editing_rate,
   n_amplicons_nonzero_editing,
   beta_binom_rho,
+  amplicon_ids,
   sample_size_mu = 100000L,
   sample_size_theta = 15L
 )

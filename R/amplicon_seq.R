@@ -14,7 +14,7 @@
 #'
 #' @examples
 generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n_amplicons_nonzero_editing,
-                                                 beta_binom_rho, sample_size_mu = 100000L, sample_size_theta = 15L) {
+                                                 beta_binom_rho, amplicon_ids, sample_size_mu = 100000L, sample_size_theta = 15L) {
   pi_trt_under_editing <- (pi_cntrl + editing_rate - pi_cntrl * editing_rate)
   pi_cntrl_vect <- rep(pi_cntrl, p)
   pi_trt_vect <- c(rep(pi_trt_under_editing, n_amplicons_nonzero_editing), rep(pi_cntrl, p - n_amplicons_nonzero_editing))
@@ -42,8 +42,8 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
   k_mat_cntrl <- generate_k_mat(n_mat_cntrl, pi_cntrl_vect, beta_binom_rho, p, r)
 
   # set column names
-  colnames(n_mat_trt) <- colnames(n_mat_cntrl) <- colnames(k_mat_trt) <- colnames(k_mat_cntrl) <- seq(1L, p)
-  out_list <- list(n_mat_trt = n_mat_trt,
+  out_list <- list(amplicon_ids = amplicon_ids,
+                   n_mat_trt = n_mat_trt,
                    n_mat_cntrl = n_mat_cntrl,
                    k_mat_trt = k_mat_trt,
                    k_mat_cntrl = k_mat_cntrl,
@@ -63,14 +63,19 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' @export
 #'
 #' @examples
-#' set.seed(4)
-#' p <- 20L
-#' beta_binom_rho <- c(0.05, rep(5e-4, times = p - 1L))
-#' data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.1,
-#'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho)
-#' result_df <- run_amplicon_seq_analysis(data_list) |>
-#'   dplyr::mutate(amplicon_id = factor(amplicon_id, labels = seq_len(p), levels = seq_len(p)))
-#' create_amplicon_seq_ci_plot(result_df)
+#' set.seed(1)
+#' p <- 25L
+#' amplicon_ids <- factor(x = paste0("amplicon_", seq_len(p)), levels = paste0("amplicon_", seq_len(p)))
+#' beta_binom_rho <- c(0.005, rep(5e-4, times = p - 1L))
+#' data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
+#'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho,
+#'                                                   amplicon_ids = amplicon_ids)
+#' res <- run_amplicon_seq_analysis(data_list)
+#'
+#' # make plots
+#' make_amplicon_seq_ci_plot(res$result_df) |> plot()
+#' make_amplicon_seq_p_value_plot(res$result_df) |> plot()
+#' make_pilot_dispersion_plot(res) |> plot()
 run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nominal_ci_coverage = 0.95,
                                       nominal_fdr = 0.1, global_rho = FALSE, rho = NULL, tail = "right",
                                       outlier_mad_thresh = 4) {
@@ -87,6 +92,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
   # second, estimate rho via method of moments estimator
   pilot_rho_hat_per_amplicon <- NA
   dispersion_outlier <- NA
+  dispersion_diagnostics <- NULL
   if (is.null(rho)) {
     if (global_rho) {
       rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
@@ -100,13 +106,16 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
                                                                 k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
                                                                 pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
                                                                 pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
-      disp_ok_v <- flag_outlier_dispersions(pilot_rho_hat_per_amplicon = pilot_rho_hat_per_amplicon,
-                                            outlier_mad_thresh = outlier_mad_thresh)
-      updated_rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt[,disp_ok_v],
-                                                          n_mat_cntrl = n_mat_cntrl[,disp_ok_v],
-                                                          k_mat_trt = k_mat_trt[,disp_ok_v], k_mat_cntrl = k_mat_cntrl[,disp_ok_v],
-                                                          pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon[disp_ok_v],
-                                                          pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon[disp_ok_v])
+      dispersion_diagnostics <- flag_outlier_dispersions(pilot_rho_hat_per_amplicon = pilot_rho_hat_per_amplicon,
+                                                         outlier_mad_thresh = outlier_mad_thresh)
+      disp_ok_v <- dispersion_diagnostics$ok_disp
+      updated_rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt[,disp_ok_v, drop = FALSE],
+                                                          n_mat_cntrl = n_mat_cntrl[,disp_ok_v, drop = FALSE],
+                                                          k_mat_trt = k_mat_trt[,disp_ok_v, drop = FALSE],
+                                                          k_mat_cntrl = k_mat_cntrl[,disp_ok_v, drop = FALSE],
+                                                          pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon[disp_ok_v, drop = FALSE],
+                                                          pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon[disp_ok_v, drop = FALSE])
+      dispersion_diagnostics$shared_rho_hat <- updated_rho_hat_per_amplicon[1]
       rho_hat_per_amplicon[disp_ok_v] <- updated_rho_hat_per_amplicon
       dispersion_outlier <- !disp_ok_v
     }
@@ -161,7 +170,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
   pi_hat_cntrl <- pi_hat_cntrl_per_amplicon
 
   # return output
-  to_return <- data.frame(amplicon_id = colnames(n_mat_trt),
+  to_return <- data.frame(amplicon_id = data_list$amplicon_ids,
                           theta_hat = theta_hat_per_amplicon,
                           rho_hat = rho_hat_per_amplicon,
                           pilot_rho_hat = pilot_rho_hat_per_amplicon,
@@ -177,7 +186,8 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
                           p_value = pmax(p_val_per_amplicon, 1e-250),
                           significant = significant)
   rownames(to_return) <- NULL
-  return(to_return)
+  out <- list(result_df = to_return,
+              dispersion_diagnostics = dispersion_diagnostics[-1])
 }
 
 
@@ -229,7 +239,8 @@ flag_outlier_dispersions <- function(pilot_rho_hat_per_amplicon, outlier_mad_thr
   my_mad <- stats::mad(pilot_rho_hat_per_amplicon)
   outlier_thresh <- my_median + outlier_mad_thresh * my_mad
   ok_disp <- pilot_rho_hat_per_amplicon <= outlier_thresh
-  return(ok_disp)
+  return(list(ok_disp = ok_disp, median_pilot_rho = my_median,
+              mad_pilot_rho = my_mad, outlier_thresh = outlier_thresh))
 }
 
 
