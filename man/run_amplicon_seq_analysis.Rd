@@ -12,7 +12,8 @@ run_amplicon_seq_analysis(
   global_rho = FALSE,
   rho = NULL,
   tail = "right",
-  outlier_mad_thresh = 4
+  outlier_mad_thresh = 4,
+  min_mutation_count = 10L
 )
 }
 \arguments{

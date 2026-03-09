@@ -14,7 +14,7 @@
 #'
 #' @examples
 generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n_amplicons_nonzero_editing,
-                                                 beta_binom_rho, amplicon_ids, sample_size_mu = 100000L, sample_size_theta = 15L) {
+                                                 beta_binom_rho, amplicon_ids, sample_size_mu = 100000L, ssample_size_theta = 15L) {
   pi_trt_under_editing <- (pi_cntrl + editing_rate - pi_cntrl * editing_rate)
   pi_cntrl_vect <- rep(pi_cntrl, p)
   pi_trt_vect <- c(rep(pi_trt_under_editing, n_amplicons_nonzero_editing), rep(pi_cntrl, p - n_amplicons_nonzero_editing))
@@ -78,18 +78,25 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' make_pilot_dispersion_plot(res) |> plot()
 run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nominal_ci_coverage = 0.95,
                                       nominal_fdr = 0.1, global_rho = FALSE, rho = NULL, tail = "right",
-                                      outlier_mad_thresh = 4) {
+                                      outlier_mad_thresh = 4, min_mutation_count = 10L) {
   n_mat_trt <- data_list$n_mat_trt
   n_mat_cntrl <- data_list$n_mat_cntrl
   k_mat_trt <- data_list$k_mat_trt
   k_mat_cntrl <- data_list$k_mat_cntrl
 
-  # first, estimate of pi for each (amplicon, condition) pair
+  # 0. perform qc, retaining only the amplicons with a mutation count of at least `min_mutation_count` across samples
+  mut_count_ok_v <- colSums(k_mat_trt) + colSums(k_mat_cntrl) >= min_mutation_count
+  n_mat_trt <- n_mat_trt[, mut_count_ok_v, drop = FALSE]
+  n_mat_cntrl <- n_mat_cntrl[, mut_count_ok_v, drop = FALSE]
+  k_mat_trt <- k_mat_trt[, mut_count_ok_v, drop = FALSE]
+  k_mat_cntrl <- k_mat_cntrl[, mut_count_ok_v, drop = FALSE]
+
+  # 1. estimate of pi for each (amplicon, condition) pair
   estimate_pi_per_amplicon <- function(n_mat, k_mat) colSums(k_mat)/colSums(n_mat)
   pi_hat_trt_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_trt, k_mat = k_mat_trt)
   pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
 
-  # second, estimate rho via method of moments estimator
+  # 2. estimate rho via method of moments estimator
   pilot_rho_hat_per_amplicon <- NA
   dispersion_outlier <- NA
   dispersion_diagnostics <- NULL
@@ -123,7 +130,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
     rho_hat_per_amplicon <- rep(rho, ncol(n_mat_trt))
   }
 
-  # third, compute the standard error of the pi_hats
+  # 3. compute the standard error of the pi_hats
   compute_pi_hat_ses <- function(n_mat, pi_hat_per_amplicon, rho_hat_per_amplicon) {
     sapply(X = seq_len(ncol(n_mat)), FUN = function(i) {
       n <- n_mat[,i]
@@ -140,10 +147,10 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
                                                      pi_hat_per_amplicon = pi_hat_cntrl_per_amplicon,
                                                      rho_hat_per_amplicon = rho_hat_per_amplicon)
 
-  # fourth, compute the theta_hats (editing rate estimates)
+  # 4. compute the theta_hats (editing rate estimates)
   theta_hat_per_amplicon <- (pi_hat_trt_per_amplicon - pi_hat_cntrl_per_amplicon)/(1 - pi_hat_cntrl_per_amplicon)
 
-  # fifth, compute the theta_hat standard errors
+  # 5. compute the theta_hat standard errors
   theta_hat_se_per_amplicon <- sapply(X = seq_len(ncol(n_mat_trt)), FUN = function(i) {
     pi_hat_trt <- pi_hat_trt_per_amplicon[[i]]
     pi_hat_cntrl <- pi_hat_cntrl_per_amplicon[[i]]
@@ -152,7 +159,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
     1/(1 - pi_hat_cntrl)^2 * sqrt((1 - pi_hat_cntrl)^2 * pi_hat_se_trt^2 + (1 - pi_hat_trt)^2 * pi_hat_se_cntrl^2)
   })
 
-  # sixth, compute confidence intervals and standard errors
+  # 6. compute confidence intervals and standard errors
   mult_factor <- qnorm(p = (1 - nominal_ci_coverage)/2, lower.tail = FALSE)
   lower_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon - mult_factor * theta_hat_se_per_amplicon, 1), 0)
   upper_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon + mult_factor * theta_hat_se_per_amplicon, 1), 0)
@@ -223,7 +230,7 @@ estimate_rho_per_amplicon <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_c
     pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon[amplicon_idx], each = r),
                      rep(pi_hat_cntrl_per_amplicon[amplicon_idx], each = r))
     shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
-      sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
+      sum( (k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho)) ) - gamma
     }
     if (shifted_pearson_stat(0, n_vect, k_vect, pi_hat_vect, gamma) <= 0) {
       0
