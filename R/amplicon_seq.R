@@ -94,7 +94,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
                                                   pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
                                                   pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
       pilot_rho_hat_per_amplicon <- NA
-
+      dispersion_outlier <- NA
     } else {
       # obtain pilot estimate of rho for each amplicon
       rho_hat_per_amplicon <-
@@ -110,6 +110,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
                                                           pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon[disp_ok_v],
                                                           pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon[disp_ok_v])
       rho_hat_per_amplicon[disp_ok_v] <- updated_rho_hat_per_amplicon
+      dispersion_outlier <- !disp_ok_v
     }
   } else {
     rho_hat_per_amplicon <- rep(rho, p)
@@ -166,6 +167,7 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
                           theta_hat = theta_hat_per_amplicon,
                           rho_hat = rho_hat_per_amplicon,
                           pilot_rho_hat = pilot_rho_hat_per_amplicon,
+                          dispersion_outlier = dispersion_outlier,
                           theta_hat_clipped = pmax(pmin(theta_hat_per_amplicon, 1), 0),
                           theta_hat_se = theta_hat_se_per_amplicon,
                           theta_hat_lower_ci = lower_theta_ci_per_amplicon,
