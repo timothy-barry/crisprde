@@ -13,28 +13,47 @@ run_amplicon_seq_analysis(
   rho = NULL,
   tail = "right",
   outlier_mad_thresh = 4,
-  min_mutation_count = 10L
+  min_mutation_count = 20L
 )
 }
 \arguments{
 \item{data_list}{a list containing n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl}
 
 \item{editing_threshold}{(scalar \link{0,1}) test whether editing is greater than this threshold}
+
+\item{nominal_ci_coverage}{(scalar \link{0,1}) nominal coverage for Wald confidence intervals}
+
+\item{nominal_fdr}{(scalar \link{0,1}) false discovery rate target for BH adjustment}
+
+\item{global_rho}{logical; if TRUE, estimate one shared dispersion across QC-passing amplicons}
+
+\item{rho}{optional scalar dispersion to use instead of estimating it}
+
+\item{tail}{one of "right" or "both"}
+
+\item{outlier_mad_thresh}{positive scalar determining the pilot-dispersion outlier threshold}
+
+\item{min_mutation_count}{minimum total mutated reads across treated and control samples required for Wald inference}
 }
 \value{
-a data frame containing
+A list with two components:
+\describe{
+\item{result_df}{A data frame containing point estimates for all amplicons and Wald inferential summaries
+for the amplicons that pass the mutation-count QC screen.}
+\item{dispersion_diagnostics}{A list containing dataset-level dispersion diagnostics for plotting.}
+}
 }
 \description{
 Run amplicon-seq analysis
 }
 \examples{
 set.seed(1)
-p <- 25L
+p <- 50L
 amplicon_ids <- factor(x = paste0("amplicon_", seq_len(p)), levels = paste0("amplicon_", seq_len(p)))
 beta_binom_rho <- c(0.005, rep(5e-4, times = p - 1L))
 data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho,
-                                                  amplicon_ids = amplicon_ids)
+                                                  amplicon_ids = amplicon_ids, sample_size_mu = 50L)
 res <- run_amplicon_seq_analysis(data_list)
 
 # make plots

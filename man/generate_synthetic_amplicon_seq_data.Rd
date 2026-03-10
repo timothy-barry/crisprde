@@ -13,7 +13,7 @@ generate_synthetic_amplicon_seq_data(
   beta_binom_rho,
   amplicon_ids,
   sample_size_mu = 100000L,
-  ssample_size_theta = 15L
+  sample_size_theta = 15L
 )
 }
 \arguments{
@@ -29,10 +29,29 @@ generate_synthetic_amplicon_seq_data(
 
 \item{beta_binom_rho}{(positive scalar or vector) dispersion parameter for the beta-binomial distribution}
 
+\item{amplicon_ids}{vector of amplicon identifiers}
+
 \item{sample_size_mu}{(positive scalar) mean sample size}
 
 \item{sample_size_theta}{(positive scalar) size (i.e., overdispersion) parameter for sample size}
 }
+\value{
+A list containing the simulated treated/control count matrices, amplicon identifiers,
+the generating mutation rates, and the beta-binomial dispersion values used in the simulation.
+}
 \description{
 Generate synthetic amplicon-seq data
+}
+\examples{
+p <- 50L
+sim_data <- generate_synthetic_amplicon_seq_data(
+  p = 50L,
+  r = 3L,
+  pi_cntrl = 0.02,
+  editing_rate = 0.15,
+  n_amplicons_nonzero_editing = 2L,
+  beta_binom_rho = 0.005,
+  amplicon_ids = paste0("amplicon_", seq_len(p)),
+  sample_size_mu = 50L
+)
 }

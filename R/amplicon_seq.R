@@ -5,16 +5,30 @@
 #' @param pi_cntrl ([0,1] scalar) background editing rate to use across all control samples
 #' @param editing_rate ([0,1] scalar) editing rate in samples where there is nonzero editing
 #' @param n_amplicons_nonzero_editing (integer) number of amplicons
+#' @param amplicon_ids vector of amplicon identifiers
 #' @param sample_size_mu (positive scalar) mean sample size
 #' @param sample_size_theta (positive scalar) size (i.e., overdispersion) parameter for sample size
 #' @param beta_binom_rho (positive scalar or vector) dispersion parameter for the beta-binomial distribution
 #'
-#' @returns
+#' @returns A list containing the simulated treated/control count matrices, amplicon identifiers,
+#' the generating mutation rates, and the beta-binomial dispersion values used in the simulation.
 #' @export
 #'
 #' @examples
+#' p <- 50L
+#' sim_data <- generate_synthetic_amplicon_seq_data(
+#'   p = 50L,
+#'   r = 3L,
+#'   pi_cntrl = 0.02,
+#'   editing_rate = 0.15,
+#'   n_amplicons_nonzero_editing = 2L,
+#'   beta_binom_rho = 0.005,
+#'   amplicon_ids = paste0("amplicon_", seq_len(p)),
+#'   sample_size_mu = 50L
+#' )
 generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n_amplicons_nonzero_editing,
-                                                 beta_binom_rho, amplicon_ids, sample_size_mu = 100000L, ssample_size_theta = 15L) {
+                                                 beta_binom_rho, amplicon_ids, sample_size_mu = 100000L,
+                                                 sample_size_theta = 15L) {
   pi_trt_under_editing <- (pi_cntrl + editing_rate - pi_cntrl * editing_rate)
   pi_cntrl_vect <- rep(pi_cntrl, p)
   pi_trt_vect <- c(rep(pi_trt_under_editing, n_amplicons_nonzero_editing), rep(pi_cntrl, p - n_amplicons_nonzero_editing))
@@ -40,8 +54,6 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
   }
   k_mat_trt <- generate_k_mat(n_mat_trt, pi_trt_vect, beta_binom_rho, p, r)
   k_mat_cntrl <- generate_k_mat(n_mat_cntrl, pi_cntrl_vect, beta_binom_rho, p, r)
-
-  # set column names
   out_list <- list(amplicon_ids = amplicon_ids,
                    n_mat_trt = n_mat_trt,
                    n_mat_cntrl = n_mat_cntrl,
@@ -54,22 +66,58 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 }
 
 
+resolve_amplicon_ids <- function(data_list, n_amplicons) {
+  amplicon_ids <- data_list$amplicon_ids
+  if (is.null(amplicon_ids) || length(amplicon_ids) == 0L) {
+    amplicon_ids <- colnames(data_list$n_mat_trt)
+  }
+  if (is.null(amplicon_ids) || length(amplicon_ids) == 0L) {
+    amplicon_ids <- as.character(seq_len(n_amplicons))
+  }
+  if (length(amplicon_ids) != n_amplicons) {
+    stop("Length of `amplicon_ids` must match the number of matrix columns.")
+  }
+  amplicon_ids
+}
+
+
+initialize_dispersion_diagnostics <- function() {
+  list(ok_disp = logical(0),
+       median_pilot_rho = NA_real_,
+       mad_pilot_rho = NA_real_,
+       outlier_thresh = NA_real_,
+       shared_rho_hat = NA_real_)
+}
+
+
 #' Run amplicon-seq analysis
 #'
 #' @param data_list a list containing n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl
 #' @param editing_threshold (scalar [0,1]) test whether editing is greater than this threshold
+#' @param nominal_ci_coverage (scalar [0,1]) nominal coverage for Wald confidence intervals
+#' @param nominal_fdr (scalar [0,1]) false discovery rate target for BH adjustment
+#' @param global_rho logical; if TRUE, estimate one shared dispersion across QC-passing amplicons
+#' @param rho optional scalar dispersion to use instead of estimating it
+#' @param tail one of "right" or "both"
+#' @param outlier_mad_thresh positive scalar determining the pilot-dispersion outlier threshold
+#' @param min_mutation_count minimum total mutated reads across treated and control samples required for Wald inference
 #'
-#' @returns a data frame containing
+#' @returns A list with two components:
+#' \describe{
+#'   \item{result_df}{A data frame containing point estimates for all amplicons and Wald inferential summaries
+#'   for the amplicons that pass the mutation-count QC screen.}
+#'   \item{dispersion_diagnostics}{A list containing dataset-level dispersion diagnostics for plotting.}
+#' }
 #' @export
 #'
 #' @examples
 #' set.seed(1)
-#' p <- 25L
+#' p <- 50L
 #' amplicon_ids <- factor(x = paste0("amplicon_", seq_len(p)), levels = paste0("amplicon_", seq_len(p)))
 #' beta_binom_rho <- c(0.005, rep(5e-4, times = p - 1L))
 #' data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
 #'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho,
-#'                                                   amplicon_ids = amplicon_ids)
+#'                                                   amplicon_ids = amplicon_ids, sample_size_mu = 50L)
 #' res <- run_amplicon_seq_analysis(data_list)
 #'
 #' # make plots
@@ -78,106 +126,155 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' make_pilot_dispersion_plot(res) |> plot()
 run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nominal_ci_coverage = 0.95,
                                       nominal_fdr = 0.1, global_rho = FALSE, rho = NULL, tail = "right",
-                                      outlier_mad_thresh = 4, min_mutation_count = 10L) {
+                                      outlier_mad_thresh = 4, min_mutation_count = 20L) {
   n_mat_trt <- data_list$n_mat_trt
   n_mat_cntrl <- data_list$n_mat_cntrl
   k_mat_trt <- data_list$k_mat_trt
   k_mat_cntrl <- data_list$k_mat_cntrl
+  p <- ncol(n_mat_trt)
+  amplicon_ids <- resolve_amplicon_ids(data_list = data_list, n_amplicons = p)
 
-  # 0. perform qc, retaining only the amplicons with a mutation count of at least `min_mutation_count` across samples
-  mut_count_ok_v <- colSums(k_mat_trt) + colSums(k_mat_cntrl) >= min_mutation_count
-  n_mat_trt <- n_mat_trt[, mut_count_ok_v, drop = FALSE]
-  n_mat_cntrl <- n_mat_cntrl[, mut_count_ok_v, drop = FALSE]
-  k_mat_trt <- k_mat_trt[, mut_count_ok_v, drop = FALSE]
-  k_mat_cntrl <- k_mat_cntrl[, mut_count_ok_v, drop = FALSE]
+  # 0. perform qc on total mutated reads, but keep all amplicons in the output
+  total_mutated_reads <- colSums(k_mat_trt) + colSums(k_mat_cntrl)
+  passes_mutation_count_qc_v <- total_mutated_reads >= min_mutation_count
 
   # 1. estimate of pi for each (amplicon, condition) pair
   estimate_pi_per_amplicon <- function(n_mat, k_mat) colSums(k_mat)/colSums(n_mat)
+  estimate_jeffreys_pi_per_amplicon <- function(n_mat, k_mat) (colSums(k_mat) + 0.5)/(colSums(n_mat) + 1)
   pi_hat_trt_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_trt, k_mat = k_mat_trt)
   pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
+  pi_tilde_trt_per_amplicon <- estimate_jeffreys_pi_per_amplicon(n_mat = n_mat_trt, k_mat = k_mat_trt)
+  pi_tilde_cntrl_per_amplicon <- estimate_jeffreys_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
 
-  # 2. estimate rho via method of moments estimator
-  pilot_rho_hat_per_amplicon <- NA
-  dispersion_outlier <- NA
-  dispersion_diagnostics <- NULL
-  if (is.null(rho)) {
-    if (global_rho) {
-      rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
-                                                  k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
-                                                  pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
-                                                  pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
+  # 2. estimate rho via method-of-moments on the QC-passing amplicons
+  rho_hat_per_amplicon <- rep(NA_real_, p)
+  pilot_rho_hat_per_amplicon <- rep(NA_real_, p)
+  dispersion_outlier <- rep(NA, p)
+  dispersion_diagnostics <- initialize_dispersion_diagnostics()
+
+  if (any(passes_mutation_count_qc_v)) {
+    n_mat_trt_qc_subset <- n_mat_trt[, passes_mutation_count_qc_v, drop = FALSE]
+    n_mat_cntrl_qc_subset <- n_mat_cntrl[, passes_mutation_count_qc_v, drop = FALSE]
+    k_mat_trt_qc_subset <- k_mat_trt[, passes_mutation_count_qc_v, drop = FALSE]
+    k_mat_cntrl_qc_subset <- k_mat_cntrl[, passes_mutation_count_qc_v, drop = FALSE]
+    pi_tilde_trt_qc_subset <- pi_tilde_trt_per_amplicon[passes_mutation_count_qc_v]
+    pi_tilde_cntrl_qc_subset <- pi_tilde_cntrl_per_amplicon[passes_mutation_count_qc_v]
+
+    if (is.null(rho)) {
+      if (global_rho) {
+        rho_hat_qc_subset_final <- estimate_global_rho(
+          n_mat_trt = n_mat_trt_qc_subset,
+          n_mat_cntrl = n_mat_cntrl_qc_subset,
+          k_mat_trt = k_mat_trt_qc_subset,
+          k_mat_cntrl = k_mat_cntrl_qc_subset,
+          pi_hat_trt_per_amplicon = pi_tilde_trt_qc_subset,
+          pi_hat_cntrl_per_amplicon = pi_tilde_cntrl_qc_subset
+        )
+      } else {
+        rho_hat_qc_subset_final <- pilot_rho_hat_qc_subset <- estimate_rho_per_amplicon(
+          n_mat_trt = n_mat_trt_qc_subset,
+          n_mat_cntrl = n_mat_cntrl_qc_subset,
+          k_mat_trt = k_mat_trt_qc_subset,
+          k_mat_cntrl = k_mat_cntrl_qc_subset,
+          pi_hat_trt_per_amplicon = pi_tilde_trt_qc_subset,
+          pi_hat_cntrl_per_amplicon = pi_tilde_cntrl_qc_subset
+        )
+        pilot_rho_hat_per_amplicon[passes_mutation_count_qc_v] <- pilot_rho_hat_qc_subset
+        dispersion_diagnostics <- flag_outlier_dispersions(pilot_rho_hats = pilot_rho_hat_qc_subset,
+                                                           outlier_mad_thresh = outlier_mad_thresh)
+        qc_subset_non_outlier_v <- dispersion_diagnostics$ok_disp
+        dispersion_outlier[passes_mutation_count_qc_v] <- !qc_subset_non_outlier_v
+
+        if (any(qc_subset_non_outlier_v)) {
+          updated_rho_hat_qc_non_outlier_subset <- estimate_global_rho(
+            n_mat_trt = n_mat_trt_qc_subset[, qc_subset_non_outlier_v, drop = FALSE],
+            n_mat_cntrl = n_mat_cntrl_qc_subset[, qc_subset_non_outlier_v, drop = FALSE],
+            k_mat_trt = k_mat_trt_qc_subset[, qc_subset_non_outlier_v, drop = FALSE],
+            k_mat_cntrl = k_mat_cntrl_qc_subset[, qc_subset_non_outlier_v, drop = FALSE],
+            pi_hat_trt_per_amplicon = pi_tilde_trt_qc_subset[qc_subset_non_outlier_v],
+            pi_hat_cntrl_per_amplicon = pi_tilde_cntrl_qc_subset[qc_subset_non_outlier_v]
+          )
+          rho_hat_qc_subset_final[qc_subset_non_outlier_v] <- updated_rho_hat_qc_non_outlier_subset
+          dispersion_diagnostics$shared_rho_hat <- updated_rho_hat_qc_non_outlier_subset[1]
+        }
+      }
     } else {
-      # obtain pilot estimate of rho for each amplicon
-      rho_hat_per_amplicon <-
-        pilot_rho_hat_per_amplicon <- estimate_rho_per_amplicon(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
-                                                                k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
-                                                                pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
-                                                                pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
-      dispersion_diagnostics <- flag_outlier_dispersions(pilot_rho_hat_per_amplicon = pilot_rho_hat_per_amplicon,
-                                                         outlier_mad_thresh = outlier_mad_thresh)
-      disp_ok_v <- dispersion_diagnostics$ok_disp
-      updated_rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt[,disp_ok_v, drop = FALSE],
-                                                          n_mat_cntrl = n_mat_cntrl[,disp_ok_v, drop = FALSE],
-                                                          k_mat_trt = k_mat_trt[,disp_ok_v, drop = FALSE],
-                                                          k_mat_cntrl = k_mat_cntrl[,disp_ok_v, drop = FALSE],
-                                                          pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon[disp_ok_v, drop = FALSE],
-                                                          pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon[disp_ok_v, drop = FALSE])
-      dispersion_diagnostics$shared_rho_hat <- updated_rho_hat_per_amplicon[1]
-      rho_hat_per_amplicon[disp_ok_v] <- updated_rho_hat_per_amplicon
-      dispersion_outlier <- !disp_ok_v
+      rho_hat_qc_subset_final <- rep(rho, sum(passes_mutation_count_qc_v))
+      dispersion_diagnostics$shared_rho_hat <- rho
     }
-  } else {
-    rho_hat_per_amplicon <- rep(rho, ncol(n_mat_trt))
+
+    rho_hat_per_amplicon[passes_mutation_count_qc_v] <- rho_hat_qc_subset_final
   }
 
-  # 3. compute the standard error of the pi_hats
-  compute_pi_hat_ses <- function(n_mat, pi_hat_per_amplicon, rho_hat_per_amplicon) {
+  # 3. compute standard errors using Jeffreys-regularized proportions
+  compute_pi_hat_ses <- function(n_mat, pi_for_var_per_amplicon, rho_hat_per_amplicon) {
     sapply(X = seq_len(ncol(n_mat)), FUN = function(i) {
       n <- n_mat[,i]
       n_tot <- sum(n)
-      pi_hat <- pi_hat_per_amplicon[[i]]
+      pi_for_var <- pi_for_var_per_amplicon[[i]]
       rho_hat <- rho_hat_per_amplicon[i]
-      sqrt(sum(n * pi_hat * (1 - pi_hat) * (1 + (n - 1) * rho_hat)))/n_tot
+      sqrt(sum(n * pi_for_var * (1 - pi_for_var) * (1 + (n - 1) * rho_hat)))/n_tot
     })
   }
-  pi_hat_se_trt_per_amplicon <- compute_pi_hat_ses(n_mat = n_mat_trt,
-                                                   pi_hat_per_amplicon = pi_hat_trt_per_amplicon,
-                                                   rho_hat_per_amplicon = rho_hat_per_amplicon)
-  pi_hat_se_cntrl_per_amplicon <- compute_pi_hat_ses(n_mat = n_mat_cntrl,
-                                                     pi_hat_per_amplicon = pi_hat_cntrl_per_amplicon,
-                                                     rho_hat_per_amplicon = rho_hat_per_amplicon)
-
-  # 4. compute the theta_hats (editing rate estimates)
-  theta_hat_per_amplicon <- (pi_hat_trt_per_amplicon - pi_hat_cntrl_per_amplicon)/(1 - pi_hat_cntrl_per_amplicon)
-
-  # 5. compute the theta_hat standard errors
-  theta_hat_se_per_amplicon <- sapply(X = seq_len(ncol(n_mat_trt)), FUN = function(i) {
-    pi_hat_trt <- pi_hat_trt_per_amplicon[[i]]
-    pi_hat_cntrl <- pi_hat_cntrl_per_amplicon[[i]]
-    pi_hat_se_trt <- pi_hat_se_trt_per_amplicon[[i]]
-    pi_hat_se_cntrl <- pi_hat_se_cntrl_per_amplicon[[i]]
-    1/(1 - pi_hat_cntrl)^2 * sqrt((1 - pi_hat_cntrl)^2 * pi_hat_se_trt^2 + (1 - pi_hat_trt)^2 * pi_hat_se_cntrl^2)
-  })
-
-  # 6. compute confidence intervals and standard errors
-  mult_factor <- qnorm(p = (1 - nominal_ci_coverage)/2, lower.tail = FALSE)
-  lower_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon - mult_factor * theta_hat_se_per_amplicon, 1), 0)
-  upper_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon + mult_factor * theta_hat_se_per_amplicon, 1), 0)
-  z_score_per_amplicon <- (theta_hat_per_amplicon - editing_threshold)/theta_hat_se_per_amplicon
-  p_val_per_amplicon <- if (tail == "right") {
-    pnorm(q = z_score_per_amplicon, lower.tail = FALSE)
-  } else if (tail == "both") {
-    2 * pmin(pnorm(q = z_score_per_amplicon, lower.tail = FALSE), pnorm(q = z_score_per_amplicon, lower.tail = TRUE))
-  } else {
-    stop("Tail not recognized.")
+  pi_hat_se_trt_per_amplicon <- rep(NA_real_, p)
+  pi_hat_se_cntrl_per_amplicon <- rep(NA_real_, p)
+  if (any(passes_mutation_count_qc_v)) {
+    pi_hat_se_trt_per_amplicon[passes_mutation_count_qc_v] <- compute_pi_hat_ses(
+      n_mat = n_mat_trt[, passes_mutation_count_qc_v, drop = FALSE],
+      pi_for_var_per_amplicon = pi_tilde_trt_per_amplicon[passes_mutation_count_qc_v],
+      rho_hat_per_amplicon = rho_hat_per_amplicon[passes_mutation_count_qc_v]
+    )
+    pi_hat_se_cntrl_per_amplicon[passes_mutation_count_qc_v] <- compute_pi_hat_ses(
+      n_mat = n_mat_cntrl[, passes_mutation_count_qc_v, drop = FALSE],
+      pi_for_var_per_amplicon = pi_tilde_cntrl_per_amplicon[passes_mutation_count_qc_v],
+      rho_hat_per_amplicon = rho_hat_per_amplicon[passes_mutation_count_qc_v]
+    )
   }
 
-  significant <- p.adjust(p = p_val_per_amplicon, method = "BH") <= nominal_fdr
-  pi_hat_trt <- pi_hat_trt_per_amplicon
-  pi_hat_cntrl <- pi_hat_cntrl_per_amplicon
+  # 4. compute the theta_hats (editing rate estimates) for all amplicons
+  theta_hat_per_amplicon <- (pi_hat_trt_per_amplicon - pi_hat_cntrl_per_amplicon)/(1 - pi_hat_cntrl_per_amplicon)
+
+  # 5. compute the theta_hat standard errors and Wald inference for the QC-passing amplicons
+  theta_hat_se_per_amplicon <- rep(NA_real_, p)
+  lower_theta_ci_per_amplicon <- rep(NA_real_, p)
+  upper_theta_ci_per_amplicon <- rep(NA_real_, p)
+  p_val_per_amplicon <- rep(NA_real_, p)
+  significant <- rep(FALSE, p)
+
+  if (any(passes_mutation_count_qc_v)) {
+    theta_hat_se_qc_subset <- sapply(X = which(passes_mutation_count_qc_v), FUN = function(i) {
+      pi_tilde_trt <- pi_tilde_trt_per_amplicon[[i]]
+      pi_tilde_cntrl <- pi_tilde_cntrl_per_amplicon[[i]]
+      pi_hat_se_trt <- pi_hat_se_trt_per_amplicon[[i]]
+      pi_hat_se_cntrl <- pi_hat_se_cntrl_per_amplicon[[i]]
+      1/(1 - pi_tilde_cntrl)^2 *
+        sqrt((1 - pi_tilde_cntrl)^2 * pi_hat_se_trt^2 + (1 - pi_tilde_trt)^2 * pi_hat_se_cntrl^2)
+    })
+    theta_hat_se_per_amplicon[passes_mutation_count_qc_v] <- theta_hat_se_qc_subset
+
+    mult_factor <- qnorm(p = (1 - nominal_ci_coverage)/2, lower.tail = FALSE)
+    lower_theta_ci_per_amplicon[passes_mutation_count_qc_v] <-
+      pmax(pmin(theta_hat_per_amplicon[passes_mutation_count_qc_v] - mult_factor * theta_hat_se_qc_subset, 1), 0)
+    upper_theta_ci_per_amplicon[passes_mutation_count_qc_v] <-
+      pmax(pmin(theta_hat_per_amplicon[passes_mutation_count_qc_v] + mult_factor * theta_hat_se_qc_subset, 1), 0)
+    z_score_qc_subset <- (theta_hat_per_amplicon[passes_mutation_count_qc_v] - editing_threshold)/theta_hat_se_qc_subset
+    p_val_qc_subset <- if (tail == "right") {
+      pnorm(q = z_score_qc_subset, lower.tail = FALSE)
+    } else if (tail == "both") {
+      2 * pmin(pnorm(q = z_score_qc_subset, lower.tail = FALSE),
+               pnorm(q = z_score_qc_subset, lower.tail = TRUE))
+    } else {
+      stop("Tail not recognized.")
+    }
+    p_val_per_amplicon[passes_mutation_count_qc_v] <- pmax(p_val_qc_subset, 1e-250)
+    significant[passes_mutation_count_qc_v] <-
+      p.adjust(p = p_val_per_amplicon[passes_mutation_count_qc_v], method = "BH") <= nominal_fdr
+  }
 
   # return output
-  to_return <- data.frame(amplicon_id = data_list$amplicon_ids,
+  to_return <- data.frame(amplicon_id = amplicon_ids,
+                          total_mutated_reads = total_mutated_reads,
+                          passes_mutation_count_qc = passes_mutation_count_qc_v,
                           theta_hat = theta_hat_per_amplicon,
                           rho_hat = rho_hat_per_amplicon,
                           pilot_rho_hat = pilot_rho_hat_per_amplicon,
@@ -186,15 +283,16 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
                           theta_hat_se = theta_hat_se_per_amplicon,
                           theta_hat_lower_ci = lower_theta_ci_per_amplicon,
                           theta_hat_upper_ci = upper_theta_ci_per_amplicon,
-                          pi_hat_trt = pi_hat_trt,
-                          pi_hat_cntrl = pi_hat_cntrl,
+                          pi_hat_trt = pi_hat_trt_per_amplicon,
+                          pi_hat_cntrl = pi_hat_cntrl_per_amplicon,
                           pi_hat_se_trt = pi_hat_se_trt_per_amplicon,
                           pi_hat_se_cntrl = pi_hat_se_cntrl_per_amplicon,
-                          p_value = pmax(p_val_per_amplicon, 1e-250),
+                          p_value = p_val_per_amplicon,
                           significant = significant)
   rownames(to_return) <- NULL
   out <- list(result_df = to_return,
-              dispersion_diagnostics = dispersion_diagnostics[-1])
+              dispersion_diagnostics = dispersion_diagnostics)
+  out
 }
 
 
@@ -241,11 +339,11 @@ estimate_rho_per_amplicon <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_c
 }
 
 
-flag_outlier_dispersions <- function(pilot_rho_hat_per_amplicon, outlier_mad_thresh) {
-  my_median <- median(pilot_rho_hat_per_amplicon)
-  my_mad <- stats::mad(pilot_rho_hat_per_amplicon)
+flag_outlier_dispersions <- function(pilot_rho_hats, outlier_mad_thresh) {
+  my_median <- median(pilot_rho_hats)
+  my_mad <- stats::mad(pilot_rho_hats)
   outlier_thresh <- my_median + outlier_mad_thresh * my_mad
-  ok_disp <- pilot_rho_hat_per_amplicon <= outlier_thresh
+  ok_disp <- pilot_rho_hats <= outlier_thresh
   return(list(ok_disp = ok_disp, median_pilot_rho = my_median,
               mad_pilot_rho = my_mad, outlier_thresh = outlier_thresh))
 }
@@ -263,6 +361,7 @@ remove_outlier_dispersions_and_shrink_to_median <- function(pilot_rho_hat_per_am
 
 run_fisher_exact_test <- function(data_list, nominal_fdr = 0.1, alternative = "greater") {
   n_amplicons <- ncol(data_list$n_mat_trt)
+  amplicon_ids <- resolve_amplicon_ids(data_list = data_list, n_amplicons = n_amplicons)
   p_vals <- sapply(X = seq_len(n_amplicons), FUN = function(i) {
     n_trt <- sum(data_list$n_mat_trt[,i])
     k_trt <- sum(data_list$k_mat_trt[,i])
@@ -273,6 +372,6 @@ run_fisher_exact_test <- function(data_list, nominal_fdr = 0.1, alternative = "g
     fit$p.value
   })
   significant <- p.adjust(p = p_vals, method = "BH") <= nominal_fdr
-  to_return <- data.frame(amplicon_id = colnames(data_list$n_mat_trt),
+  to_return <- data.frame(amplicon_id = amplicon_ids,
                           p_value = p_vals, significant = significant)
 }
