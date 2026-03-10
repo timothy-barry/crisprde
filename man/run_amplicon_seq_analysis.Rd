@@ -17,7 +17,7 @@ run_amplicon_seq_analysis(
 )
 }
 \arguments{
-\item{data_list}{a list containing n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl}
+\item{data_list}{a list containing n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl, and amplicon_ids}
 
 \item{editing_threshold}{(scalar \link{0,1}) test whether editing is greater than this threshold}
 }

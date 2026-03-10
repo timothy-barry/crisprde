@@ -14,7 +14,7 @@
 #'
 #' @examples
 generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n_amplicons_nonzero_editing,
-                                                 beta_binom_rho, amplicon_ids, sample_size_mu = 100000L, ssample_size_theta = 15L) {
+                                                 beta_binom_rho, amplicon_ids, sample_size_mu = 100000L, sample_size_theta = 15L) {
   pi_trt_under_editing <- (pi_cntrl + editing_rate - pi_cntrl * editing_rate)
   pi_cntrl_vect <- rep(pi_cntrl, p)
   pi_trt_vect <- c(rep(pi_trt_under_editing, n_amplicons_nonzero_editing), rep(pi_cntrl, p - n_amplicons_nonzero_editing))
@@ -56,7 +56,7 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 
 #' Run amplicon-seq analysis
 #'
-#' @param data_list a list containing n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl
+#' @param data_list a list containing n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl, and amplicon_ids
 #' @param editing_threshold (scalar [0,1]) test whether editing is greater than this threshold
 #'
 #' @returns a data frame containing
@@ -79,91 +79,114 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nominal_ci_coverage = 0.95,
                                       nominal_fdr = 0.1, global_rho = FALSE, rho = NULL, tail = "right",
                                       outlier_mad_thresh = 4, min_mutation_count = 10L) {
+  # 0. extract the data
   n_mat_trt <- data_list$n_mat_trt
   n_mat_cntrl <- data_list$n_mat_cntrl
   k_mat_trt <- data_list$k_mat_trt
   k_mat_cntrl <- data_list$k_mat_cntrl
 
-  # 0. perform qc, retaining only the amplicons with a mutation count of at least `min_mutation_count` across samples
+  # 1. estimate of pi and theta
+  estimate_pi_per_amplicon <- function(n_mat, k_mat) colSums(k_mat)/colSums(n_mat)
+  pi_hat_trt_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_trt, k_mat = k_mat_trt)
+  pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
+  theta_hat_per_amplicon <- (pi_hat_trt_per_amplicon - pi_hat_cntrl_per_amplicon)/(1 - pi_hat_cntrl_per_amplicon)
+
+  # 2. perform qc, retaining only the amplicons with a mutation count of at least `min_mutation_count` across samples
   mut_count_ok_v <- colSums(k_mat_trt) + colSums(k_mat_cntrl) >= min_mutation_count
+  if (any(!mut_count_ok_v)) {
+    # construct fail qc result data frame
+    to_return_fail_qc <- data.frame(amplicon_id = data_list$amplicon_ids[!mut_count_ok_v],
+                                    theta_hat = theta_hat_per_amplicon[!mut_count_ok_v],
+                                    rho_hat = NA, pilot_rho_hat = NA,
+                                    dispersion_outlier = NA,
+                                    theta_hat_clipped = pmax(pmin(theta_hat_per_amplicon[!mut_count_ok_v], 1), 0),
+                                    theta_hat_se = NA, theta_hat_lower_ci = NA,
+                                    theta_hat_upper_ci = NA,
+                                    pi_hat_trt = pi_hat_trt_per_amplicon[!mut_count_ok_v],
+                                    pi_hat_cntrl = pi_hat_cntrl_per_amplicon[!mut_count_ok_v],
+                                    pi_hat_se_trt = NA,
+                                    pi_hat_se_cntrl = NA, p_value = NA, significant = NA, pass_qc = FALSE)
+    # if all fail qc, return this data frame
+    if (all(!mut_count_ok_v)) {
+      ret <- list(result_df = to_return_fail_qc)
+      return(ret)
+    }
+  }
+
+  # 3. compute pi tilde, or the Jeffrey-regularized pi estimator
   n_mat_trt <- n_mat_trt[, mut_count_ok_v, drop = FALSE]
   n_mat_cntrl <- n_mat_cntrl[, mut_count_ok_v, drop = FALSE]
   k_mat_trt <- k_mat_trt[, mut_count_ok_v, drop = FALSE]
   k_mat_cntrl <- k_mat_cntrl[, mut_count_ok_v, drop = FALSE]
+  estimate_reg_pi_per_amplicon <- function(n_mat, k_mat) (colSums(k_mat) + 0.5)/(colSums(n_mat) + 1)
+  pi_tilde_trt_per_amplicon <- estimate_reg_pi_per_amplicon(n_mat = n_mat_trt, k_mat = k_mat_trt)
+  pi_tilde_cntrl_per_amplicon <- estimate_reg_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
 
-  # 1. estimate of pi for each (amplicon, condition) pair
-  estimate_pi_per_amplicon <- function(n_mat, k_mat) colSums(k_mat)/colSums(n_mat)
-  pi_hat_trt_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_trt, k_mat = k_mat_trt)
-  pi_hat_cntrl_per_amplicon <- estimate_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
-
-  # 2. estimate rho via method of moments estimator
-  pilot_rho_hat_per_amplicon <- NA
+  # 4. estimate rho via method of moments estimator
+  pilot_rho_tilde_per_amplicon <- NA
   dispersion_outlier <- NA
   dispersion_diagnostics <- NULL
   if (is.null(rho)) {
     if (global_rho) {
-      rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
-                                                  k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
-                                                  pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
-                                                  pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
+      rho_tilde_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
+                                                    k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
+                                                    pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon,
+                                                    pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon)
     } else {
       # obtain pilot estimate of rho for each amplicon
-      rho_hat_per_amplicon <-
-        pilot_rho_hat_per_amplicon <- estimate_rho_per_amplicon(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
-                                                                k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
-                                                                pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon,
-                                                                pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon)
-      dispersion_diagnostics <- flag_outlier_dispersions(pilot_rho_hat_per_amplicon = pilot_rho_hat_per_amplicon,
+      rho_tilde_per_amplicon <-
+        pilot_rho_tilde_per_amplicon <- estimate_rho_per_amplicon(n_mat_trt = n_mat_trt, n_mat_cntrl = n_mat_cntrl,
+                                                                  k_mat_trt = k_mat_trt, k_mat_cntrl = k_mat_cntrl,
+                                                                  pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon,
+                                                                  pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon)
+      dispersion_diagnostics <- flag_outlier_dispersions(pilot_rho_tilde_per_amplicon = pilot_rho_tilde_per_amplicon,
                                                          outlier_mad_thresh = outlier_mad_thresh)
       disp_ok_v <- dispersion_diagnostics$ok_disp
-      updated_rho_hat_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt[,disp_ok_v, drop = FALSE],
-                                                          n_mat_cntrl = n_mat_cntrl[,disp_ok_v, drop = FALSE],
-                                                          k_mat_trt = k_mat_trt[,disp_ok_v, drop = FALSE],
-                                                          k_mat_cntrl = k_mat_cntrl[,disp_ok_v, drop = FALSE],
-                                                          pi_hat_trt_per_amplicon = pi_hat_trt_per_amplicon[disp_ok_v, drop = FALSE],
-                                                          pi_hat_cntrl_per_amplicon = pi_hat_cntrl_per_amplicon[disp_ok_v, drop = FALSE])
-      dispersion_diagnostics$shared_rho_hat <- updated_rho_hat_per_amplicon[1]
-      rho_hat_per_amplicon[disp_ok_v] <- updated_rho_hat_per_amplicon
+      updated_rho_tilde_per_amplicon <- estimate_global_rho(n_mat_trt = n_mat_trt[,disp_ok_v, drop = FALSE],
+                                                            n_mat_cntrl = n_mat_cntrl[,disp_ok_v, drop = FALSE],
+                                                            k_mat_trt = k_mat_trt[,disp_ok_v, drop = FALSE],
+                                                            k_mat_cntrl = k_mat_cntrl[,disp_ok_v, drop = FALSE],
+                                                            pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon[disp_ok_v, drop = FALSE],
+                                                            pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon[disp_ok_v, drop = FALSE])
+      dispersion_diagnostics$shared_rho_hat <- updated_rho_tilde_per_amplicon[1]
+      rho_tilde_per_amplicon[disp_ok_v] <- updated_rho_tilde_per_amplicon
       dispersion_outlier <- !disp_ok_v
     }
   } else {
-    rho_hat_per_amplicon <- rep(rho, ncol(n_mat_trt))
+    rho_tilde_per_amplicon <- rep(rho, ncol(n_mat_trt))
   }
 
-  # 3. compute the standard error of the pi_hats
-  compute_pi_hat_ses <- function(n_mat, pi_hat_per_amplicon, rho_hat_per_amplicon) {
+  # 5. compute the standard error of the pi_hats
+  compute_pi_tilde_ses <- function(n_mat, pi_tilde_per_amplicon, rho_tilde_per_amplicon) {
     sapply(X = seq_len(ncol(n_mat)), FUN = function(i) {
       n <- n_mat[,i]
       n_tot <- sum(n)
-      pi_hat <- pi_hat_per_amplicon[[i]]
-      rho_hat <- rho_hat_per_amplicon[i]
-      sqrt(sum(n * pi_hat * (1 - pi_hat) * (1 + (n - 1) * rho_hat)))/n_tot
+      pi_tilde <- pi_tilde_per_amplicon[[i]]
+      rho_tilde <- rho_tilde_per_amplicon[i]
+      sqrt(sum(n * pi_tilde * (1 - pi_tilde) * (1 + (n - 1) * rho_tilde)))/n_tot
     })
   }
-  pi_hat_se_trt_per_amplicon <- compute_pi_hat_ses(n_mat = n_mat_trt,
-                                                   pi_hat_per_amplicon = pi_hat_trt_per_amplicon,
-                                                   rho_hat_per_amplicon = rho_hat_per_amplicon)
-  pi_hat_se_cntrl_per_amplicon <- compute_pi_hat_ses(n_mat = n_mat_cntrl,
-                                                     pi_hat_per_amplicon = pi_hat_cntrl_per_amplicon,
-                                                     rho_hat_per_amplicon = rho_hat_per_amplicon)
+  pi_tilde_se_trt_per_amplicon <- compute_pi_tilde_ses(n_mat = n_mat_trt,
+                                                       pi_tilde_per_amplicon = pi_tilde_trt_per_amplicon,
+                                                       rho_tilde_per_amplicon = rho_tilde_per_amplicon)
+  pi_tilde_se_cntrl_per_amplicon <- compute_pi_tilde_ses(n_mat = n_mat_cntrl,
+                                                         pi_tilde_per_amplicon = pi_tilde_cntrl_per_amplicon,
+                                                         rho_tilde_per_amplicon = rho_tilde_per_amplicon)
 
-  # 4. compute the theta_hats (editing rate estimates)
-  theta_hat_per_amplicon <- (pi_hat_trt_per_amplicon - pi_hat_cntrl_per_amplicon)/(1 - pi_hat_cntrl_per_amplicon)
-
-  # 5. compute the theta_hat standard errors
-  theta_hat_se_per_amplicon <- sapply(X = seq_len(ncol(n_mat_trt)), FUN = function(i) {
-    pi_hat_trt <- pi_hat_trt_per_amplicon[[i]]
-    pi_hat_cntrl <- pi_hat_cntrl_per_amplicon[[i]]
-    pi_hat_se_trt <- pi_hat_se_trt_per_amplicon[[i]]
-    pi_hat_se_cntrl <- pi_hat_se_cntrl_per_amplicon[[i]]
-    1/(1 - pi_hat_cntrl)^2 * sqrt((1 - pi_hat_cntrl)^2 * pi_hat_se_trt^2 + (1 - pi_hat_trt)^2 * pi_hat_se_cntrl^2)
+  # 6. compute the theta_hat standard errors
+  theta_tilde_se_per_amplicon <- sapply(X = seq_along(pi_tilde_trt_per_amplicon), FUN = function(i) {
+    pi_tilde_trt <- pi_tilde_trt_per_amplicon[i]
+    pi_tilde_cntrl <- pi_tilde_cntrl_per_amplicon[i]
+    pi_tilde_se_trt <- pi_tilde_se_trt_per_amplicon[i]
+    pi_tilde_se_cntrl <- pi_tilde_se_cntrl_per_amplicon[i]
+    1/(1 - pi_tilde_cntrl)^2 * sqrt((1 - pi_tilde_cntrl)^2 * pi_tilde_se_trt^2 + (1 - pi_tilde_trt)^2 * pi_tilde_se_cntrl^2)
   })
 
-  # 6. compute confidence intervals and standard errors
+  # 7. compute confidence intervals and standard errors
   mult_factor <- qnorm(p = (1 - nominal_ci_coverage)/2, lower.tail = FALSE)
-  lower_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon - mult_factor * theta_hat_se_per_amplicon, 1), 0)
-  upper_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon + mult_factor * theta_hat_se_per_amplicon, 1), 0)
-  z_score_per_amplicon <- (theta_hat_per_amplicon - editing_threshold)/theta_hat_se_per_amplicon
+  lower_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon[mut_count_ok_v] - mult_factor * theta_tilde_se_per_amplicon, 1), 0)
+  upper_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon[mut_count_ok_v] + mult_factor * theta_tilde_se_per_amplicon, 1), 0)
+  z_score_per_amplicon <- (theta_hat_per_amplicon[mut_count_ok_v] - editing_threshold)/theta_tilde_se_per_amplicon
   p_val_per_amplicon <- if (tail == "right") {
     pnorm(q = z_score_per_amplicon, lower.tail = FALSE)
   } else if (tail == "both") {
@@ -171,93 +194,100 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0.001, nomi
   } else {
     stop("Tail not recognized.")
   }
-
   significant <- p.adjust(p = p_val_per_amplicon, method = "BH") <= nominal_fdr
-  pi_hat_trt <- pi_hat_trt_per_amplicon
-  pi_hat_cntrl <- pi_hat_cntrl_per_amplicon
 
-  # return output
-  to_return <- data.frame(amplicon_id = data_list$amplicon_ids,
-                          theta_hat = theta_hat_per_amplicon,
-                          rho_hat = rho_hat_per_amplicon,
-                          pilot_rho_hat = pilot_rho_hat_per_amplicon,
+  # 8. return output
+  to_return <- data.frame(amplicon_id = data_list$amplicon_ids[mut_count_ok_v],
+                          theta_hat = theta_hat_per_amplicon[mut_count_ok_v],
+                          rho_hat = rho_tilde_per_amplicon,
+                          pilot_rho_hat = pilot_rho_tilde_per_amplicon,
                           dispersion_outlier = dispersion_outlier,
-                          theta_hat_clipped = pmax(pmin(theta_hat_per_amplicon, 1), 0),
-                          theta_hat_se = theta_hat_se_per_amplicon,
+                          theta_hat_clipped = pmax(pmin(theta_hat_per_amplicon[mut_count_ok_v], 1), 0),
+                          theta_hat_se = theta_tilde_se_per_amplicon,
                           theta_hat_lower_ci = lower_theta_ci_per_amplicon,
                           theta_hat_upper_ci = upper_theta_ci_per_amplicon,
-                          pi_hat_trt = pi_hat_trt,
-                          pi_hat_cntrl = pi_hat_cntrl,
-                          pi_hat_se_trt = pi_hat_se_trt_per_amplicon,
-                          pi_hat_se_cntrl = pi_hat_se_cntrl_per_amplicon,
+                          pi_hat_trt = pi_hat_trt_per_amplicon[mut_count_ok_v],
+                          pi_hat_cntrl = pi_hat_cntrl_per_amplicon[mut_count_ok_v],
+                          pi_hat_se_trt = pi_tilde_se_trt_per_amplicon,
+                          pi_hat_se_cntrl = pi_tilde_se_cntrl_per_amplicon,
                           p_value = pmax(p_val_per_amplicon, 1e-250),
-                          significant = significant)
-  rownames(to_return) <- NULL
-  out <- list(result_df = to_return,
-              dispersion_diagnostics = dispersion_diagnostics[-1])
+                          significant = significant,
+                          pass_qc = TRUE)
+    if (any(!mut_count_ok_v)) to_return <- rbind(to_return, to_return_fail_qc)
+    out <- list(result_df = to_return,
+                dispersion_diagnostics = dispersion_diagnostics[-1])
+    return(out)
 }
 
 
 estimate_global_rho <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl,
-                                pi_hat_trt_per_amplicon, pi_hat_cntrl_per_amplicon) {
+                                pi_tilde_trt_per_amplicon, pi_tilde_cntrl_per_amplicon) {
   n_vect <- c(as.integer(n_mat_trt), as.integer(n_mat_cntrl))
   k_vect <- c(as.integer(k_mat_trt), as.integer(k_mat_cntrl))
   p <- ncol(n_mat_trt)
   r <- nrow(n_mat_trt)
-  pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon, each = r), rep(pi_hat_cntrl_per_amplicon, each = r))
+  pi_tilde_vect <- c(rep(pi_tilde_trt_per_amplicon, each = r), rep(pi_tilde_cntrl_per_amplicon, each = r))
   gamma <- 2 * p * (r - 1)
-  shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
-    sum((k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
+  shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_tilde_vect, gamma) {
+    sum((k_vect - n_vect * pi_tilde_vect)^2/(n_vect * pi_tilde_vect * (1 - pi_tilde_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
   }
-  rho_hat <- if (shifted_pearson_stat(0, n_vect, k_vect, pi_hat_vect, gamma) <= 0) {
+  rho_tilde <- if (shifted_pearson_stat(0, n_vect, k_vect, pi_tilde_vect, gamma) <= 0) {
     0
   } else {
-    uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
+    uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_tilde_vect, gamma)$root
   }
-  rho_hat_per_amplicon <- rep(rho_hat, p)
-  return(rho_hat_per_amplicon)
+  rho_tilde_per_amplicon <- rep(rho_tilde, p)
+  return(rho_tilde_per_amplicon)
 }
 
 
 estimate_rho_per_amplicon <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl,
-                                      pi_hat_trt_per_amplicon, pi_hat_cntrl_per_amplicon) {
+                                      pi_tilde_trt_per_amplicon, pi_tilde_cntrl_per_amplicon) {
   p <- ncol(n_mat_trt)
   r <- nrow(n_mat_trt)
   sapply(X = seq_len(p), FUN = function(amplicon_idx) {
     n_vect <- c(n_mat_trt[,amplicon_idx], n_mat_cntrl[,amplicon_idx])
     k_vect <- c(k_mat_trt[,amplicon_idx], k_mat_cntrl[,amplicon_idx])
     gamma <- 2 * r - 2
-    pi_hat_vect <- c(rep(pi_hat_trt_per_amplicon[amplicon_idx], each = r),
-                     rep(pi_hat_cntrl_per_amplicon[amplicon_idx], each = r))
-    shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_hat_vect, gamma) {
-      sum( (k_vect - n_vect * pi_hat_vect)^2/(n_vect * pi_hat_vect * (1 - pi_hat_vect) * (1 + (n_vect - 1) *  cand_rho)) ) - gamma
+    pi_tilde_vect <- c(rep(pi_tilde_trt_per_amplicon[amplicon_idx], each = r),
+                       rep(pi_tilde_cntrl_per_amplicon[amplicon_idx], each = r))
+    shifted_pearson_stat <- function(cand_rho, n_vect, k_vect, pi_tilde_vect, gamma) {
+      sum((k_vect - n_vect * pi_tilde_vect)^2/(n_vect * pi_tilde_vect * (1 - pi_tilde_vect) * (1 + (n_vect - 1) *  cand_rho))) - gamma
     }
-    if (shifted_pearson_stat(0, n_vect, k_vect, pi_hat_vect, gamma) <= 0) {
+    if (shifted_pearson_stat(0, n_vect, k_vect, pi_tilde_vect, gamma) <= 0) {
       0
     } else {
-      uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_hat_vect, gamma)$root
+      uniroot(f = shifted_pearson_stat, interval = c(0, 0.5), n_vect, k_vect, pi_tilde_vect, gamma)$root
     }
   })
 }
 
 
-flag_outlier_dispersions <- function(pilot_rho_hat_per_amplicon, outlier_mad_thresh) {
-  my_median <- median(pilot_rho_hat_per_amplicon)
-  my_mad <- stats::mad(pilot_rho_hat_per_amplicon)
-  outlier_thresh <- my_median + outlier_mad_thresh * my_mad
-  ok_disp <- pilot_rho_hat_per_amplicon <= outlier_thresh
+flag_outlier_dispersions <- function(pilot_rho_tilde_per_amplicon, outlier_mad_thresh) {
+  positive_pilot_rho_tilde <- pilot_rho_tilde_per_amplicon[pilot_rho_tilde_per_amplicon > 0]
+  if (length(positive_pilot_rho_tilde) >= 1L) {
+    my_median <- median(positive_pilot_rho_tilde)
+    my_mad <- stats::mad(positive_pilot_rho_tilde)
+    outlier_thresh <- my_median + outlier_mad_thresh * my_mad
+    ok_disp <- pilot_rho_tilde_per_amplicon <= outlier_thresh
+  } else {
+    ok_disp <- rep(TRUE, length(pilot_rho_tilde_per_amplicon))
+    my_median <- 0
+    my_mad <- 0
+    outlier_thresh <- NA
+  }
   return(list(ok_disp = ok_disp, median_pilot_rho = my_median,
               mad_pilot_rho = my_mad, outlier_thresh = outlier_thresh))
 }
 
 
-remove_outlier_dispersions_and_shrink_to_median <- function(pilot_rho_hat_per_amplicon, outlier_mad_thresh) {
-  my_median <- median(pilot_rho_hat_per_amplicon)
-  my_mad <- stats::mad(pilot_rho_hat_per_amplicon)
+remove_outlier_dispersions_and_shrink_to_median <- function(pilot_rho_tilde_per_amplicon, outlier_mad_thresh) {
+  my_median <- median(pilot_rho_tilde_per_amplicon)
+  my_mad <- stats::mad(pilot_rho_tilde_per_amplicon)
   outlier_thresh <- my_median + outlier_mad_thresh * my_mad
-  rho_hat_shrunk <- median(pilot_rho_hat_per_amplicon[pilot_rho_hat_per_amplicon < outlier_thresh])
-  pilot_rho_hat_per_amplicon[pilot_rho_hat_per_amplicon < outlier_thresh] <- rho_hat_shrunk
-  return(pilot_rho_hat_per_amplicon)
+  rho_tilde_shrunk <- median(pilot_rho_tilde_per_amplicon[pilot_rho_tilde_per_amplicon < outlier_thresh])
+  pilot_rho_tilde_per_amplicon[pilot_rho_tilde_per_amplicon < outlier_thresh] <- rho_tilde_shrunk
+  return(pilot_rho_tilde_per_amplicon)
 }
 
 
@@ -273,6 +303,6 @@ run_fisher_exact_test <- function(data_list, nominal_fdr = 0.1, alternative = "g
     fit$p.value
   })
   significant <- p.adjust(p = p_vals, method = "BH") <= nominal_fdr
-  to_return <- data.frame(amplicon_id = colnames(data_list$n_mat_trt),
+  to_return <- data.frame(amplicon_id = data_list$amplicon_ids,
                           p_value = p_vals, significant = significant)
 }
