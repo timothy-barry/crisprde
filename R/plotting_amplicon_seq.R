@@ -6,6 +6,12 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
     stop("Expected `res$dispersion_diagnostics` to be present.")
   }
 
+  pilot_df <- result_df |>
+    dplyr::filter(!is.na(pilot_rho_hat)) |>
+    dplyr::mutate(amplicon_id = as.character(amplicon_id))
+  final_df <- result_df |>
+    dplyr::filter(!is.na(rho_hat)) |>
+    dplyr::mutate(amplicon_id = as.character(amplicon_id))
   outlier_df <- result_df |>
     dplyr::filter(dispersion_outlier) |>
     dplyr::mutate(amplicon_id = as.character(amplicon_id))
@@ -34,14 +40,29 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
       )
     )
 
-  my_plot <- ggplot2::ggplot(result_df, ggplot2::aes(x = amplicon_id, y = pilot_rho_hat)) +
+  my_plot <- ggplot2::ggplot(result_df, ggplot2::aes(x = amplicon_id)) +
     ggplot2::theme_bw() +
     ggplot2::geom_hline(
       data = line_df,
       ggplot2::aes(yintercept = yintercept, color = line_label, linetype = line_label),
       show.legend = TRUE
     ) +
-    ggplot2::geom_point(color = "black", size = 2) +
+    ggplot2::geom_point(
+      data = pilot_df,
+      ggplot2::aes(y = pilot_rho_hat, shape = "Pilot rho"),
+      color = "black",
+      size = 2,
+      show.legend = TRUE
+    ) +
+    ggplot2::geom_point(
+      data = final_df,
+      ggplot2::aes(y = rho_hat, shape = "Final rho"),
+      color = "grey55",
+      size = 3,
+      stroke = 0.9,
+      fill = NA,
+      show.legend = TRUE
+    ) +
     ggplot2::scale_color_manual(
       name = NULL,
       values = c(
@@ -49,6 +70,11 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
         "Median pilot rho" = "dodgerblue2",
         "Shared rho" = "goldenrod"
       )
+    ) +
+    ggplot2::scale_shape_manual(
+      name = NULL,
+      breaks = c("Pilot rho", "Final rho"),
+      values = c("Pilot rho" = 16, "Final rho" = 1)
     ) +
     ggplot2::scale_linetype_manual(
       name = NULL,
@@ -72,9 +98,20 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
         order = 1,
         override.aes = list(shape = NA, linewidth = 0.8)
       ),
+      shape = ggplot2::guide_legend(
+        order = 2,
+        override.aes = list(
+          shape = c(16, 1),
+          color = c("black", "grey55"),
+          fill = c("black", NA),
+          size = c(2, 3),
+          stroke = c(0, 0.9),
+          linewidth = 0
+        )
+      ),
       linetype = "none",
       fill = ggplot2::guide_legend(
-        order = 2,
+        order = 3,
         override.aes = list(shape = 21, size = 3, color = "black")
       )
     ) +
@@ -84,16 +121,29 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
     )
 
   if (n_outliers > 0) {
-    my_plot <- my_plot +
-      ggplot2::geom_point(
-        data = outlier_df,
-        ggplot2::aes(fill = amplicon_id),
-        shape = 21,
-        color = "black",
-        size = 2.5,
-        show.legend = TRUE
-      ) +
-      ggplot2::scale_fill_manual(name = "Outlier amplicons", values = outlier_colors)
+    if (label_outliers) {
+      my_plot <- my_plot +
+        ggplot2::geom_point(
+          data = outlier_df,
+          ggplot2::aes(y = pilot_rho_hat, fill = amplicon_id),
+          shape = 21,
+          color = "black",
+          size = 2.5,
+          show.legend = TRUE
+        ) +
+        ggplot2::scale_fill_manual(name = "Outlier amplicons", values = outlier_colors)
+    } else {
+      my_plot <- my_plot +
+        ggplot2::geom_point(
+          data = outlier_df,
+          ggplot2::aes(y = pilot_rho_hat),
+          shape = 21,
+          fill = "black",
+          color = "black",
+          size = 2.5,
+          show.legend = FALSE
+        )
+    }
   }
 
   my_plot
