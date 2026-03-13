@@ -6,20 +6,22 @@
 \usage{
 run_amplicon_seq_analysis(
   data_list,
-  editing_threshold = 0.001,
+  editing_threshold = 0,
   nominal_ci_coverage = 0.95,
   nominal_fdr = 0.1,
-  global_rho = FALSE,
   rho = NULL,
   tail = "right",
   outlier_mad_thresh = 4,
-  min_mutation_count = 10L
+  min_mutation_count = 10L,
+  bias_variance_param = 0.5
 )
 }
 \arguments{
 \item{data_list}{a list containing n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl, and amplicon_ids}
 
 \item{editing_threshold}{(scalar \link{0,1}) test whether editing is greater than this threshold}
+
+\item{bias_variance_param}{(scalar\link{0,1}) weight for computing final dispersion parameter; 0 indicates all weight on the shared dispersion estimate, while 1 indicates all weight on pilot dispersion estimate}
 }
 \value{
 a data frame containing
