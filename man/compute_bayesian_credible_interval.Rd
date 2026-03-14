@@ -10,8 +10,8 @@ compute_bayesian_credible_interval(
   k_trt,
   k_cntrl,
   rho,
-  alpha_pi_cntrl,
-  beta_pi_cntrl,
+  alpha_pi,
+  beta_pi,
   alpha_theta,
   beta_theta,
   nominal_ci_probability = 0.95
@@ -30,13 +30,13 @@ beta_binom_rho <- rep(5e-4, times = p)
 data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho,
                                                   amplicon_ids = amplicon_ids)
-n_trt <- data_list$n_mat_trt[,1]
-n_cntrl <- data_list$n_mat_cntrl[,1]
-k_trt <- data_list$k_mat_trt[,1]
-k_cntrl <- data_list$k_mat_cntrl[,1]
-rho <- beta_binom_rho[1]
-alpha_pi_cntrl <- 1
-beta_pi_cntrl <- 100
+n_trt <- data_list$n_mat_trt[,3]
+n_cntrl <- data_list$n_mat_cntrl[,3]
+k_trt <- data_list$k_mat_trt[,3]
+k_cntrl <- data_list$k_mat_cntrl[,3]
+rho <- beta_binom_rho[3]
+alpha_pi <- 1
+beta_pi <- 100
 alpha_theta <- 1
 beta_theta <- 100
 }
