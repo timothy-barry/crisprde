@@ -2,7 +2,7 @@
 % Please edit documentation in R/bayesian_amplicon_seq.R
 \name{compute_bayesian_credible_interval}
 \alias{compute_bayesian_credible_interval}
-\title{Title}
+\title{Compute Bayesian posterior summaries for amplicon-seq editing}
 \usage{
 compute_bayesian_credible_interval(
   n_trt,
@@ -14,29 +14,55 @@ compute_bayesian_credible_interval(
   beta_pi,
   alpha_theta,
   beta_theta,
-  nominal_ci_probability = 0.95
+  alpha = 0.01
 )
 }
 \arguments{
-\item{nominal_ci_probability}{}
+\item{n_trt}{Numeric vector of total read counts for the treated replicates.}
+
+\item{n_cntrl}{Numeric vector of total read counts for the control replicates.}
+
+\item{k_trt}{Numeric vector of mutated read counts for the treated replicates.}
+
+\item{k_cntrl}{Numeric vector of mutated read counts for the control replicates.}
+
+\item{rho}{Scalar beta-binomial dispersion parameter shared across replicates.}
+
+\item{alpha_pi}{First shape parameter of the Beta prior on \code{pi}.}
+
+\item{beta_pi}{Second shape parameter of the Beta prior on \code{pi}.}
+
+\item{alpha_theta}{First shape parameter of the Beta prior on \code{theta}.}
+
+\item{beta_theta}{Second shape parameter of the Beta prior on \code{theta}.}
+
+\item{alpha}{Tail probability used for the returned upper credible limits.}
+}
+\value{
+A list containing posterior means and upper credible limits for
+\code{theta} and \code{pi}, along with data frames giving the discretized marginal
+posterior densities over the evaluation grid.
 }
 \description{
-Title
+Approximates the joint posterior of the background mutation rate \code{pi} and
+the editing rate \code{theta} under the beta-binomial model described in the
+accompanying methods writeup.
 }
 \examples{
-p <- 5L
-amplicon_ids <- factor(x = paste0("amplicon_", seq_len(p)), levels = paste0("amplicon_", seq_len(p)))
-beta_binom_rho <- rep(5e-4, times = p)
-data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
-                                                  n_amplicons_nonzero_editing = 2L, beta_binom_rho,
-                                                  amplicon_ids = amplicon_ids)
-n_trt <- data_list$n_mat_trt[,3]
-n_cntrl <- data_list$n_mat_cntrl[,3]
-k_trt <- data_list$k_mat_trt[,3]
-k_cntrl <- data_list$k_mat_cntrl[,3]
-rho <- beta_binom_rho[3]
+data_list <- generate_synthetic_amplicon_seq_data(p = 1L, r = 3L, pi_cntrl = 0.001, editing_rate = 0.025,
+                                                  n_amplicons_nonzero_editing = 1L, beta_binom_rho = 5e-5,
+                                                  amplicon_ids = "amplicon_1")
+n_trt <- data_list$n_mat_trt[,1]
+n_cntrl <- data_list$n_mat_cntrl[,1]
+k_trt <- data_list$k_mat_trt[,1]
+k_cntrl <- data_list$k_mat_cntrl[,1]
+rho <- 5e-5
+
 alpha_pi <- 1
 beta_pi <- 100
 alpha_theta <- 1
-beta_theta <- 100
+beta_theta <- 1
+
+result <- compute_bayesian_credible_interval(n_trt, n_cntrl, k_trt, k_cntrl, rho, alpha_pi, beta_pi, alpha_theta, beta_theta)
+
 }

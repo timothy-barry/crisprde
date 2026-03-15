@@ -1,31 +1,42 @@
-#' Title
+#' Compute Bayesian posterior summaries for amplicon-seq editing
 #'
-#' @param n_trt
-#' @param n_cntrl
-#' @param k_trt
-#' @param k_cntrl
-#' @param rho
-#' @param nominal_ci_probability
+#' Approximates the joint posterior of the background mutation rate `pi` and
+#' the editing rate `theta` under the beta-binomial model described in the
+#' accompanying methods writeup.
 #'
-#' @returns
+#' @param n_trt Numeric vector of total read counts for the treated replicates.
+#' @param n_cntrl Numeric vector of total read counts for the control replicates.
+#' @param k_trt Numeric vector of mutated read counts for the treated replicates.
+#' @param k_cntrl Numeric vector of mutated read counts for the control replicates.
+#' @param rho Scalar beta-binomial dispersion parameter shared across replicates.
+#' @param alpha_pi First shape parameter of the Beta prior on `pi`.
+#' @param beta_pi Second shape parameter of the Beta prior on `pi`.
+#' @param alpha_theta First shape parameter of the Beta prior on `theta`.
+#' @param beta_theta Second shape parameter of the Beta prior on `theta`.
+#' @param alpha Tail probability used for the returned upper credible limits.
+#'
+#' @returns A list containing posterior means and upper credible limits for
+#'   `theta` and `pi`, along with data frames giving the discretized marginal
+#'   posterior densities over the evaluation grid.
 #' @export
 #'
 #' @examples
-#' p <- 5L
-#' amplicon_ids <- factor(x = paste0("amplicon_", seq_len(p)), levels = paste0("amplicon_", seq_len(p)))
-#' beta_binom_rho <- rep(5e-4, times = p)
-#' data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
-#'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho,
-#'                                                   amplicon_ids = amplicon_ids)
-#' n_trt <- data_list$n_mat_trt[,3]
-#' n_cntrl <- data_list$n_mat_cntrl[,3]
-#' k_trt <- data_list$k_mat_trt[,3]
-#' k_cntrl <- data_list$k_mat_cntrl[,3]
-#' rho <- beta_binom_rho[3]
+#' data_list <- generate_synthetic_amplicon_seq_data(p = 1L, r = 3L, pi_cntrl = 0.001, editing_rate = 0.025,
+#'                                                   n_amplicons_nonzero_editing = 1L, beta_binom_rho = 5e-5,
+#'                                                   amplicon_ids = "amplicon_1")
+#' n_trt <- data_list$n_mat_trt[,1]
+#' n_cntrl <- data_list$n_mat_cntrl[,1]
+#' k_trt <- data_list$k_mat_trt[,1]
+#' k_cntrl <- data_list$k_mat_cntrl[,1]
+#' rho <- 5e-5
+#'
 #' alpha_pi <- 1
 #' beta_pi <- 100
 #' alpha_theta <- 1
-#' beta_theta <- 100
+#' beta_theta <- 1
+#'
+#' result <- compute_bayesian_credible_interval(n_trt, n_cntrl, k_trt, k_cntrl, rho, alpha_pi, beta_pi, alpha_theta, beta_theta)
+#'
 compute_bayesian_credible_interval <- function(n_trt, n_cntrl, k_trt, k_cntrl, rho,
                                                alpha_pi, beta_pi, alpha_theta, beta_theta,
                                                alpha = 0.01) {
@@ -35,16 +46,16 @@ compute_bayesian_credible_interval <- function(n_trt, n_cntrl, k_trt, k_cntrl, r
   u_min <- v_min <- log(10e-7)
   u_max <- v_max <- log(0.999)
   u_grid <- seq(u_min, u_max, length.out = 500)
-  v_grid <- seq(v_min, v_max, length.out = 1000)
+  v_grid <- seq(v_min, v_max, length.out = 2000)
   exp_u_grid <- exp(u_grid)
   exp_v_grid <- exp(v_grid)
 
   # 2. compute P1 over the grid
   r <- length(n_trt)
   p1_a <- sapply(X = seq_len(r), FUN = function(i) {
-      VGAM::dbetabinom(x = k_trt[i], size = n_trt[i], prob = exp_u_grid, rho = rho, log = TRUE)
+      VGAM::dbetabinom(x = k_cntrl[i], size = n_cntrl[i], prob = exp_u_grid, rho = rho, log = TRUE)
     }, simplify = TRUE) |> t() |> colSums()
-  p1_b <- alpha_pi * u_grid + (beta_pi - u_grid) * log(1 - exp_u_grid)
+  p1_b <- alpha_pi * u_grid + (beta_pi - 1) * log(1 - exp_u_grid)
   p1 <- p1_a + p1_b
 
   # 3. compute P2 over grid
@@ -92,8 +103,4 @@ compute_posterior_mean <- function(posterior, x_grid) {
 
 compute_upper_credible_limit <- function(posterior, x_grid, alpha) {
   x_grid[min(which(cumsum(posterior) >= 1 - alpha))]
-}
-
-prepare_posterior_density <- function(posterior, ) {
-
 }
