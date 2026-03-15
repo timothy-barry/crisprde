@@ -28,12 +28,14 @@
 #' beta_theta <- 100
 compute_bayesian_credible_interval <- function(n_trt, n_cntrl, k_trt, k_cntrl, rho,
                                                alpha_pi, beta_pi, alpha_theta, beta_theta,
-                                               nominal_ci_probability = 0.95) {
+                                               alpha = 0.01) {
+  # pi -> u -> T
+  # theta -> v -> S
   # 1. define a grid of points
-  u_min <- v_min <- log(10e-5)
+  u_min <- v_min <- log(10e-7)
   u_max <- v_max <- log(0.999)
-  u_grid <- seq(u_min, u_max, length.out = 1000)
-  v_grid <- seq(v_min, v_max, length.out = 500)
+  u_grid <- seq(u_min, u_max, length.out = 500)
+  v_grid <- seq(v_min, v_max, length.out = 1000)
   exp_u_grid <- exp(u_grid)
   exp_v_grid <- exp(v_grid)
 
@@ -64,9 +66,34 @@ compute_bayesian_credible_interval <- function(n_trt, n_cntrl, k_trt, k_cntrl, r
   w <- w/sum(w)
 
   # 7. compute the approximate posterior density of theta and pi cntrl
-  theta_posterior <- rowSums(w)
-  pi_posterior <- colSums(w)
+  theta_posterior <- colSums(w)
+  pi_posterior <- rowSums(w)
 
   # 8. compute the mean, credible interval, and upper credible limit of the posteriors
+  theta_mean <- compute_posterior_mean(theta_posterior, exp_v_grid)
+  pi_mean <- compute_posterior_mean(pi_posterior, exp_u_grid)
+  theta_upper_credible_limit <- compute_upper_credible_limit(theta_posterior, exp_v_grid, alpha)
+  pi_upper_credible_limit <- compute_upper_credible_limit(pi_posterior, exp_u_grid, alpha)
+  theta_density_df <- data.frame(theta = exp_v_grid, density = theta_posterior)
+  pi_density_df <- data.frame(pi = exp_u_grid, density = pi_posterior)
+
+  # 9. prepare output
+  ret <- list(theta_mean = theta_mean,
+              theta_upper_credible_limit = theta_upper_credible_limit,
+              theta_density_df = theta_density_df,
+              pi_mean = pi_mean,
+              pi_upper_credible_limit = pi_upper_credible_limit,
+              pi_density_df = pi_density_df)
+}
+
+compute_posterior_mean <- function(posterior, x_grid) {
+  sum(posterior * x_grid)
+}
+
+compute_upper_credible_limit <- function(posterior, x_grid, alpha) {
+  x_grid[min(which(cumsum(posterior) >= 1 - alpha))]
+}
+
+prepare_posterior_density <- function(posterior, ) {
 
 }
