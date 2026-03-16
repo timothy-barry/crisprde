@@ -204,7 +204,7 @@ make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
 
   my_plot <- my_plot +
     ggplot2::scale_y_continuous(labels = scales::label_percent(), limits = ylim) +
-    ggplot2::theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     ggplot2::xlab("Amplicon") + ggplot2::ylab("Estimated editing rate")
 
   if (highlight_upper_ci_exceeds) {
@@ -232,7 +232,7 @@ make_amplicon_seq_p_value_plot <- function(result_df, min_p_value = 1e-250) {
                                   p_value = pmax(p_value, min_p_value)),
                   mapping = ggplot2::aes(x = amplicon_id, y = p_value, col = Significant)) +
     ggplot2::geom_point() + ggplot2::theme_bw(base_size = 9) +
-    ggplot2::theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5),
                    legend.position = "bottom") +
     ggplot2::scale_color_manual(values = c("black", "dodgerblue2")) +
     ggplot2::xlab("Amplicon") +
