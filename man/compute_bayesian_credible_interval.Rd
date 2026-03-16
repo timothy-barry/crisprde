@@ -49,7 +49,8 @@ the editing rate \code{theta} under the beta-binomial model described in the
 accompanying methods writeup.
 }
 \examples{
-data_list <- generate_synthetic_amplicon_seq_data(p = 1L, r = 3L, pi_cntrl = 0.001, editing_rate = 0.025,
+# generate the data
+data_list <- generate_synthetic_amplicon_seq_data(p = 1L, r = 3L, pi_cntrl = 0.001, editing_rate = 0.0,
                                                   n_amplicons_nonzero_editing = 1L, beta_binom_rho = 5e-5,
                                                   amplicon_ids = "amplicon_1")
 n_trt <- data_list$n_mat_trt[,1]
@@ -58,11 +59,18 @@ k_trt <- data_list$k_mat_trt[,1]
 k_cntrl <- data_list$k_mat_cntrl[,1]
 rho <- 5e-5
 
-alpha_pi <- 1
-beta_pi <- 100
+# set the priors
+params <- select_beta_hyperparameters(mean = 0.01, variance = 1e-4)
+alpha_pi <- params[["alpha"]]
+beta_pi <- params[["beta"]]
 alpha_theta <- 1
 beta_theta <- 1
 
+# plot the priors
+p_prior <- cowplot::plot_grid(make_prior_density_plot(alpha = alpha_theta, beta = beta_theta, parameter = "theta"),
+                              make_prior_density_plot(alpha = alpha_pi, beta = beta_pi, parameter = "pi"))
 result <- compute_bayesian_credible_interval(n_trt, n_cntrl, k_trt, k_cntrl, rho, alpha_pi, beta_pi, alpha_theta, beta_theta)
+p_posterior <- cowplot::plot_grid(make_posterior_density_plot(result = result, parameter = "theta", x_limits = c(0, 0.01)),
+                                  make_posterior_density_plot(result = result, parameter = "pi", x_limits = c(0, 0.01)))
 
 }

@@ -21,7 +21,8 @@
 #' @export
 #'
 #' @examples
-#' data_list <- generate_synthetic_amplicon_seq_data(p = 1L, r = 3L, pi_cntrl = 0.001, editing_rate = 0.025,
+#' # generate the data
+#' data_list <- generate_synthetic_amplicon_seq_data(p = 1L, r = 3L, pi_cntrl = 0.001, editing_rate = 0.0,
 #'                                                   n_amplicons_nonzero_editing = 1L, beta_binom_rho = 5e-5,
 #'                                                   amplicon_ids = "amplicon_1")
 #' n_trt <- data_list$n_mat_trt[,1]
@@ -30,12 +31,19 @@
 #' k_cntrl <- data_list$k_mat_cntrl[,1]
 #' rho <- 5e-5
 #'
-#' alpha_pi <- 1
-#' beta_pi <- 100
+#' # set the priors
+#' params <- select_beta_hyperparameters(mean = 0.01, variance = 1e-4)
+#' alpha_pi <- params[["alpha"]]
+#' beta_pi <- params[["beta"]]
 #' alpha_theta <- 1
 #' beta_theta <- 1
 #'
+#' # plot the priors
+#' p_prior <- cowplot::plot_grid(make_prior_density_plot(alpha = alpha_theta, beta = beta_theta, parameter = "theta"),
+#'                               make_prior_density_plot(alpha = alpha_pi, beta = beta_pi, parameter = "pi"))
 #' result <- compute_bayesian_credible_interval(n_trt, n_cntrl, k_trt, k_cntrl, rho, alpha_pi, beta_pi, alpha_theta, beta_theta)
+#' p_posterior <- cowplot::plot_grid(make_posterior_density_plot(result = result, parameter = "theta", x_limits = c(0, 0.01)),
+#'                                   make_posterior_density_plot(result = result, parameter = "pi", x_limits = c(0, 0.01)))
 #'
 compute_bayesian_credible_interval <- function(n_trt, n_cntrl, k_trt, k_cntrl, rho,
                                                alpha_pi, beta_pi, alpha_theta, beta_theta,
@@ -46,7 +54,7 @@ compute_bayesian_credible_interval <- function(n_trt, n_cntrl, k_trt, k_cntrl, r
   u_min <- v_min <- log(10e-7)
   u_max <- v_max <- log(0.999)
   u_grid <- seq(u_min, u_max, length.out = 500)
-  v_grid <- seq(v_min, v_max, length.out = 2000)
+  v_grid <- seq(v_min, v_max, length.out = 2500)
   exp_u_grid <- exp(u_grid)
   exp_v_grid <- exp(v_grid)
 
@@ -103,4 +111,31 @@ compute_posterior_mean <- function(posterior, x_grid) {
 
 compute_upper_credible_limit <- function(posterior, x_grid, alpha) {
   x_grid[min(which(cumsum(posterior) >= 1 - alpha))]
+}
+
+#' Solve for Beta hyperparameters from a target mean and variance
+#'
+#' Given a desired mean and variance under the Beta parameterization
+#' `mean = a / (a + b)` and
+#' `variance = ab / ((a + b)^2 (a + b + 1))`,
+#' solve for the corresponding positive shape parameters.
+#'
+#' @param mean Target mean of the Beta distribution. Must lie strictly between 0 and 1.
+#' @param variance Target variance of the Beta distribution. Must be positive and strictly smaller than `mean * (1 - mean)`.
+#' @returns A named numeric vector with entries `alpha` and `beta`.
+#' @export
+#'
+#' @examples
+#' params <- select_beta_hyperparameters(mean = 0.01, variance = 1e-4)
+#' p <- make_beta_prior_density_plot(parameter = "pi", alpha = params[["alpha"]], beta = params[["beta"]], xmin = 0, xmax = 0.1)
+select_beta_hyperparameters <- function(mean, variance) {
+  max_variance <- mean * (1 - mean)
+  if (variance >= max_variance) {
+    stop("`variance` must be strictly smaller than `mean * (1 - mean)` for a Beta distribution.")
+  }
+  concentration <- mean * (1 - mean) / variance - 1
+  alpha <- mean * concentration
+  beta <- (1 - mean) * concentration
+
+  c(alpha = alpha, beta = beta)
 }
