@@ -54,13 +54,31 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 }
 
 
+
+
 #' Run amplicon-seq analysis
 #'
-#' @param data_list a list containing n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl, and amplicon_ids
-#' @param editing_threshold (scalar [0,1]) test whether editing is greater than this threshold
-#' @param bias_variance_param (scalar[0,1]) weight for computing final dispersion parameter; 0 indicates all weight on the shared dispersion estimate, while 1 indicates all weight on pilot dispersion estimate
+#' Compute Wald-style inference for each amplicon under the beta-binomial model.
+#' Dispersion is estimated only from amplicons with at least
+#' `min_mutated_read_count` mutated reads across treatment and control
+#' replicates; lower-information amplicons are retained in the output and are
+#' assigned the shared dispersion estimate.
 #'
-#' @returns a data frame containing
+#' @param data_list A list containing `n_mat_trt`, `n_mat_cntrl`, `k_mat_trt`, `k_mat_cntrl`, and `amplicon_ids`.
+#' @param editing_threshold Scalar in `[0, 1]`; test whether the editing rate is greater than this threshold.
+#' @param nominal_ci_coverage Nominal coverage level for the reported confidence intervals.
+#' @param nominal_fdr Nominal false discovery rate for the BH-adjusted significance calls.
+#' @param rho Optional scalar dispersion parameter. If supplied, this value is used for every amplicon instead of estimating dispersion from the data.
+#' @param tail Either `"right"` or `"both"`, indicating the tail used to compute p-values.
+#' @param outlier_mad_thresh MAD-based threshold used to flag unusually large pilot dispersion estimates before computing the shared dispersion estimate.
+#' @param min_mutated_read_count Minimum total mutated read count required for an amplicon to contribute to dispersion estimation.
+#' @param bias_variance_param Scalar in `[0, 1]` giving the weight on the pilot dispersion estimate for high-information amplicons. A value of 0 uses only the shared dispersion estimate, while 1 uses only the pilot estimate.
+#' @returns A list with components `result_df` and `dispersion_diagnostics`.
+#'   `result_df` contains one row per amplicon with the estimated dispersion,
+#'   clipped editing-rate estimate, confidence interval, p-value, and
+#'   significance call. `dispersion_diagnostics` summarizes the pilot
+#'   dispersion distribution and the shared dispersion estimate when `rho` is
+#'   estimated from the data.
 #' @export
 #'
 #' @examples
@@ -71,27 +89,21 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
 #'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho,
 #'                                                   amplicon_ids = amplicon_ids)
-#' res <- run_amplicon_seq_analysis(data_list)
+#' res <- run_freqentist_amplicon_seq_analysis(data_list)
 #'
 #' # make plots
 #' make_amplicon_seq_ci_plot(res$result_df) |> plot()
 #' make_amplicon_seq_p_value_plot(res$result_df) |> plot()
 #' make_pilot_dispersion_plot(res) |> plot()
-run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0, nominal_ci_coverage = 0.95,
-                                      nominal_fdr = 0.1, rho = NULL, tail = "right",
-                                      outlier_mad_thresh = 4, min_mutated_read_count = 50L,
-                                      bias_variance_param = 0.5) {
-  # 0. extract the data
+run_freqentist_amplicon_seq_analysis <- function(data_list, editing_threshold = 0, nominal_ci_coverage = 0.95,
+                                                 nominal_fdr = 0.1, rho = NULL, tail = "right",
+                                                 outlier_mad_thresh = 4, min_mutated_read_count = 50L,
+                                                 bias_variance_param = 0.5) {
+  # 1. extract the data
   n_mat_trt <- data_list$n_mat_trt
   n_mat_cntrl <- data_list$n_mat_cntrl
   k_mat_trt <- data_list$k_mat_trt
   k_mat_cntrl <- data_list$k_mat_cntrl
-
-  # 1. perform qc, tracking amplicons for which the total mutated read count exceeds min_mutated_read_count
-  high_info_content <- which(colSums(k_mat_trt) + colSums(k_mat_cntrl) >= min_mutated_read_count) |> as.integer()
-  if (length(high_info_content)/ncol(n_mat_trt) < 0.95) {
-    warning("The data appear to be sparse (i.e., one or more amplicons exhibit very few mutated reads). Consider using the Bayesian inference engine.")
-  }
 
   # 2. estimate of pi and theta
   estimate_pi_per_amplicon <- function(n_mat, k_mat) colSums(k_mat)/colSums(n_mat)
@@ -105,39 +117,20 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0, nominal_
   pi_tilde_cntrl_per_amplicon <- estimate_reg_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
 
   # 4. estimate rho via method of moments estimator
-  pilot_rho_tilde_per_amplicon <- rep(NA_real_, length = ncol(n_mat_trt))
-  dispersion_outlier <- rep(NA, length = ncol(n_mat_trt))
-  dispersion_diagnostics <- NULL
-
-  if (is.null(rho)) {
-    # get the pilot estimate of rho for each amplicon with high information content
-    pilot_rho_tilde_per_amplicon_high_info <- estimate_rho_per_amplicon(n_mat_trt = n_mat_trt[,high_info_content, drop = FALSE],
-                                                                        n_mat_cntrl = n_mat_cntrl[,high_info_content, drop = FALSE],
-                                                                        k_mat_trt = k_mat_trt[,high_info_content, drop = FALSE],
-                                                                        k_mat_cntrl = k_mat_cntrl[,high_info_content, drop = FALSE],
-                                                                        pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon[high_info_content],
-                                                                        pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon[high_info_content])
-    dispersion_diagnostics <- flag_outlier_dispersions(pilot_rho_tilde_per_amplicon = pilot_rho_tilde_per_amplicon_high_info,
-                                                       outlier_mad_thresh = outlier_mad_thresh)
-    disp_ok_v <- dispersion_diagnostics$ok_disp
-    shared_rho_tilde <- estimate_global_rho(n_mat_trt = n_mat_trt[,high_info_content[disp_ok_v], drop = FALSE],
-                                            n_mat_cntrl = n_mat_cntrl[,high_info_content[disp_ok_v], drop = FALSE],
-                                            k_mat_trt = k_mat_trt[,high_info_content[disp_ok_v], drop = FALSE],
-                                            k_mat_cntrl = k_mat_cntrl[,high_info_content[disp_ok_v], drop = FALSE],
-                                            pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon[high_info_content[disp_ok_v], drop = FALSE],
-                                            pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon[high_info_content[disp_ok_v], drop = FALSE])
-    dispersion_diagnostics$shared_rho_hat <- shared_rho_tilde
-    weight_vector <- ifelse(disp_ok_v, bias_variance_param, 1)
-    rho_tilde_per_amplicon_high_info <- weight_vector * pilot_rho_tilde_per_amplicon_high_info + (1 - weight_vector) * shared_rho_tilde
-
-    # expand results to entire set of amplicons
-    rho_tilde_per_amplicon <- rep(shared_rho_tilde, length = ncol(n_mat_trt))
-    rho_tilde_per_amplicon[high_info_content] <- rho_tilde_per_amplicon_high_info
-    dispersion_outlier[high_info_content] <- !disp_ok_v
-    pilot_rho_tilde_per_amplicon[high_info_content] <- pilot_rho_tilde_per_amplicon_high_info
-  } else {
-    rho_tilde_per_amplicon <- rep(rho, ncol(n_mat_trt))
-  }
+  dispersion_output <- estimate_dispersions(n_mat_trt = n_mat_trt,
+                                            n_mat_cntrl = n_mat_cntrl,
+                                            k_mat_trt = k_mat_trt,
+                                            k_mat_cntrl = k_mat_cntrl,
+                                            pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon,
+                                            pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon,
+                                            outlier_mad_thresh = outlier_mad_thresh,
+                                            bias_variance_param = bias_variance_param,
+                                            rho = rho,
+                                            min_mutated_read_count = min_mutated_read_count)
+  pilot_rho_tilde_per_amplicon <- dispersion_output$pilot_rho_tilde_per_amplicon
+  dispersion_outlier <- dispersion_output$dispersion_outlier
+  dispersion_diagnostics <- dispersion_output$dispersion_diagnostics
+  rho_tilde_per_amplicon <- dispersion_output$rho_tilde_per_amplicon
 
   # 5. compute the standard error of the pi_hats
   compute_pi_tilde_ses <- function(n_mat, pi_tilde_per_amplicon, rho_tilde_per_amplicon) {
@@ -192,6 +185,56 @@ run_amplicon_seq_analysis <- function(data_list, editing_threshold = 0, nominal_
     out <- list(result_df = to_return,
                 dispersion_diagnostics = dispersion_diagnostics[-1])
     return(out)
+}
+
+
+estimate_dispersions <- function(n_mat_trt, n_mat_cntrl, k_mat_trt, k_mat_cntrl,
+                                 pi_tilde_trt_per_amplicon, pi_tilde_cntrl_per_amplicon,
+                                 outlier_mad_thresh, bias_variance_param,
+                                 rho, min_mutated_read_count) {
+  pilot_rho_tilde_per_amplicon <- rep(NA_real_, length = ncol(n_mat_trt))
+  dispersion_outlier <- rep(NA, length = ncol(n_mat_trt))
+  dispersion_diagnostics <- NULL
+
+  #  find high-information amplicons
+  high_info_content <- which(colSums(k_mat_trt) + colSums(k_mat_cntrl) >= min_mutated_read_count) |> as.integer()
+  if (is.null(rho) && length(high_info_content) == 0L) {
+    stop("No amplicon has sufficiently many mutated reads to estimate a dispersion parameter. Consider specifying rho via the `rho` argument.")
+  }
+
+  if (is.null(rho)) {
+    # get the pilot estimate of rho for each amplicon with high information content
+    pilot_rho_tilde_per_amplicon_high_info <- estimate_rho_per_amplicon(n_mat_trt = n_mat_trt[,high_info_content, drop = FALSE],
+                                                                        n_mat_cntrl = n_mat_cntrl[,high_info_content, drop = FALSE],
+                                                                        k_mat_trt = k_mat_trt[,high_info_content, drop = FALSE],
+                                                                        k_mat_cntrl = k_mat_cntrl[,high_info_content, drop = FALSE],
+                                                                        pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon[high_info_content],
+                                                                        pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon[high_info_content])
+    dispersion_diagnostics <- flag_outlier_dispersions(pilot_rho_tilde_per_amplicon = pilot_rho_tilde_per_amplicon_high_info,
+                                                       outlier_mad_thresh = outlier_mad_thresh)
+    disp_ok_v <- dispersion_diagnostics$ok_disp
+    shared_rho_tilde <- estimate_global_rho(n_mat_trt = n_mat_trt[,high_info_content[disp_ok_v], drop = FALSE],
+                                            n_mat_cntrl = n_mat_cntrl[,high_info_content[disp_ok_v], drop = FALSE],
+                                            k_mat_trt = k_mat_trt[,high_info_content[disp_ok_v], drop = FALSE],
+                                            k_mat_cntrl = k_mat_cntrl[,high_info_content[disp_ok_v], drop = FALSE],
+                                            pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon[high_info_content[disp_ok_v], drop = FALSE],
+                                            pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon[high_info_content[disp_ok_v], drop = FALSE])
+    dispersion_diagnostics$shared_rho_hat <- shared_rho_tilde
+    weight_vector <- ifelse(disp_ok_v, bias_variance_param, 1)
+    rho_tilde_per_amplicon_high_info <- weight_vector * pilot_rho_tilde_per_amplicon_high_info + (1 - weight_vector) * shared_rho_tilde
+
+    # expand results to entire set of amplicons
+    rho_tilde_per_amplicon <- rep(shared_rho_tilde, length = ncol(n_mat_trt))
+    rho_tilde_per_amplicon[high_info_content] <- rho_tilde_per_amplicon_high_info
+    dispersion_outlier[high_info_content] <- !disp_ok_v
+    pilot_rho_tilde_per_amplicon[high_info_content] <- pilot_rho_tilde_per_amplicon_high_info
+  } else {
+    rho_tilde_per_amplicon <- rep(rho, ncol(n_mat_trt))
+  }
+  return(list(pilot_rho_tilde_per_amplicon = pilot_rho_tilde_per_amplicon,
+              dispersion_outlier = dispersion_outlier,
+              dispersion_diagnostics = dispersion_diagnostics,
+              rho_tilde_per_amplicon = rho_tilde_per_amplicon))
 }
 
 
