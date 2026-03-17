@@ -159,9 +159,11 @@ run_freqentist_amplicon_seq_analysis <- function(data_list, editing_threshold = 
   })
 
   # 7. compute confidence intervals and standard errors
-  mult_factor <- qnorm(p = (1 - nominal_ci_coverage)/2, lower.tail = FALSE)
-  lower_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon - mult_factor * theta_tilde_se_per_amplicon, 1), 0)
-  upper_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon + mult_factor * theta_tilde_se_per_amplicon, 1), 0)
+  mult_factor_two_sided <- qnorm(p = (1 - nominal_ci_coverage)/2, lower.tail = FALSE)
+  mult_factor_one_sided <- qnorm(p = 1 - nominal_ci_coverage, lower.tail = FALSE)
+  lower_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon - mult_factor_two_sided * theta_tilde_se_per_amplicon, 1), 0)
+  upper_theta_ci_per_amplicon <- pmax(pmin(theta_hat_per_amplicon + mult_factor_two_sided * theta_tilde_se_per_amplicon, 1), 0)
+  one_sided_upper_cl_per_amplicon <- pmax(pmin(theta_hat_per_amplicon + mult_factor_one_sided * theta_tilde_se_per_amplicon, 1), 0)
   z_score_per_amplicon <- (theta_hat_per_amplicon - editing_threshold)/theta_tilde_se_per_amplicon
   p_val_per_amplicon <- if (tail == "right") {
     pnorm(q = z_score_per_amplicon, lower.tail = FALSE)
@@ -177,9 +179,10 @@ run_freqentist_amplicon_seq_analysis <- function(data_list, editing_threshold = 
                           rho_hat = rho_tilde_per_amplicon,
                           pilot_rho_hat = pilot_rho_tilde_per_amplicon,
                           dispersion_outlier = dispersion_outlier,
-                          theta_hat_clipped = pmax(pmin(theta_hat_per_amplicon, 1), 0),
-                          theta_hat_lower_ci = lower_theta_ci_per_amplicon,
-                          theta_hat_upper_ci = upper_theta_ci_per_amplicon,
+                          theta_hat = pmax(pmin(theta_hat_per_amplicon, 1), 0),
+                          theta_lower_ci = lower_theta_ci_per_amplicon,
+                          theta_upper_ci = upper_theta_ci_per_amplicon,
+                          theta_one_sided_upper_cl = one_sided_upper_cl_per_amplicon,
                           p_value = pmax(p_val_per_amplicon, 1e-250),
                           significant = significant)
     out <- list(result_df = to_return,

@@ -1,3 +1,74 @@
+run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 0.99, rho = NULL,
+                                               outlier_mad_thresh = 4, min_mutated_read_count = 50L,
+                                               bias_variance_param = 0.5,
+                                               alpha_pi = 15, beta_pi = 350,
+                                               alpha_theta = 1, beta_theta = 1) {
+  # 1. extract the data
+  n_mat_trt <- data_list$n_mat_trt
+  n_mat_cntrl <- data_list$n_mat_cntrl
+  k_mat_trt <- data_list$k_mat_trt
+  k_mat_cntrl <- data_list$k_mat_cntrl
+
+  # 2. compute pi tilde, or the Jeffrey-regularized pi estimator (for dispersion estimation)
+  estimate_reg_pi_per_amplicon <- function(n_mat, k_mat) (colSums(k_mat) + 0.5)/(colSums(n_mat) + 1)
+  pi_tilde_trt_per_amplicon <- estimate_reg_pi_per_amplicon(n_mat = n_mat_trt, k_mat = k_mat_trt)
+  pi_tilde_cntrl_per_amplicon <- estimate_reg_pi_per_amplicon(n_mat = n_mat_cntrl, k_mat = k_mat_cntrl)
+
+  # 3. estimate rho via regularized method of moments approach
+  dispersion_output <- estimate_dispersions(n_mat_trt = n_mat_trt,
+                                            n_mat_cntrl = n_mat_cntrl,
+                                            k_mat_trt = k_mat_trt,
+                                            k_mat_cntrl = k_mat_cntrl,
+                                            pi_tilde_trt_per_amplicon = pi_tilde_trt_per_amplicon,
+                                            pi_tilde_cntrl_per_amplicon = pi_tilde_cntrl_per_amplicon,
+                                            outlier_mad_thresh = outlier_mad_thresh,
+                                            bias_variance_param = bias_variance_param,
+                                            rho = rho,
+                                            min_mutated_read_count = min_mutated_read_count)
+  rho_tilde_per_amplicon <- dispersion_output$rho_tilde_per_amplicon
+
+  # 4. run the Bayesian estimation procedure for each amplicon
+  amplicon_wise_res_list <- lapply(X = seq_len(ncol(n_mat_trt)), FUN = function(j) {
+    print(paste0("Running analysis on amplicon ", data_list$amplicon_ids[j]))
+    res <- compute_bayesian_estimate_for_amplicon(n_trt = n_mat_trt[,j],
+                                                  n_cntrl = n_mat_cntrl[,j],
+                                                  k_trt = k_mat_trt[,j],
+                                                  k_cntrl = k_mat_cntrl[,j],
+                                                  rho = rho_tilde_per_amplicon[j],
+                                                  alpha_pi = alpha_pi, beta_pi = beta_pi,
+                                                  alpha_theta = alpha_theta, beta_theta = beta_theta,
+                                                  alpha = 1 - nominal_ci_coverage)
+    res$amplicon_id <- amplicon_ids[j]
+    return(res)
+  })
+
+  # 5. prepare the results
+  theta_hat <- sapply(X = amplicon_wise_res_list, FUN = function(l) l[["theta_mean"]])
+  theta_one_sided_upper_cl <- sapply(X = amplicon_wise_res_list, FUN = function(l) l[["theta_credible_interval"]][["one_sided_bound"]])
+  theta_lower_ci <- sapply(X = amplicon_wise_res_list, FUN = function(l) l[["theta_credible_interval"]][["lower_bound"]])
+  theta_upper_ci <- sapply(X = amplicon_wise_res_list, FUN = function(l) l[["theta_credible_interval"]][["upper_bound"]])
+  theta_posterior_density_df <- lapply(X = amplicon_wise_res_list, FUN = function(l) {
+    l[["theta_density_df"]] |> dplyr::mutate(amplicon_id = l[["amplicon_id"]])
+  }) |> data.table::rbindlist()
+  pi_posterior_density_df <- lapply(X = amplicon_wise_res_list, FUN = function(l) {
+    l[["pi_density_df"]] |> dplyr::mutate(amplicon_id = l[["amplicon_id"]])
+  }) |> data.table::rbindlist()
+
+  result_df <- data.frame(amplicon_id = data_list$amplicon_ids,
+                          rho_hat = rho_tilde_per_amplicon,
+                          pilot_rho_hat = dispersion_output$pilot_rho_tilde_per_amplicon,
+                          dispersion_outlier = dispersion_output$dispersion_outlier,
+                          theta_hat = theta_hat,
+                          theta_lower_ci = theta_lower_ci,
+                          theta_upper_ci = theta_upper_ci,
+                          theta_one_sided_upper_cl = theta_one_sided_upper_cl)
+  ret <- list(result_df = result_df,
+              dispersion_diagnostics = dispersion_output$dispersion_diagnostics[-1],
+              theta_posterior_density_df = theta_posterior_density_df,
+              pi_posterior_density_df = pi_posterior_density_df)
+  return(ret)
+}
+
 #' Compute Bayesian posterior summaries for amplicon-seq editing
 #'
 #' Approximates the joint posterior of the background mutation rate `pi` and
@@ -32,7 +103,7 @@
 #' rho <- 5e-5
 #'
 #' # set the priors
-#' params <- select_beta_hyperparameters(mean = 0.01, variance = 1e-4)
+#' params <- select_beta_hyperparameters(mean = 0.04, variance = 1e-4)
 #' alpha_pi <- params[["alpha"]]
 #' beta_pi <- params[["beta"]]
 #' alpha_theta <- 1
@@ -41,13 +112,13 @@
 #' # plot the priors
 #' p_prior <- cowplot::plot_grid(make_prior_density_plot(alpha = alpha_theta, beta = beta_theta, parameter = "theta"),
 #'                               make_prior_density_plot(alpha = alpha_pi, beta = beta_pi, parameter = "pi"))
-#' result <- compute_bayesian_credible_interval(n_trt, n_cntrl, k_trt, k_cntrl, rho, alpha_pi, beta_pi, alpha_theta, beta_theta)
+#' result <- compute_bayesian_estimate_for_amplicon(n_trt, n_cntrl, k_trt, k_cntrl, rho, alpha_pi, beta_pi, alpha_theta, beta_theta)
 #' p_posterior <- cowplot::plot_grid(make_posterior_density_plot(result = result, parameter = "theta", x_limits = c(0, 0.01)),
 #'                                   make_posterior_density_plot(result = result, parameter = "pi", x_limits = c(0, 0.01)))
 #'
-compute_bayesian_credible_interval <- function(n_trt, n_cntrl, k_trt, k_cntrl, rho,
-                                               alpha_pi, beta_pi, alpha_theta, beta_theta,
-                                               alpha = 0.01) {
+compute_bayesian_estimate_for_amplicon <- function(n_trt, n_cntrl, k_trt, k_cntrl, rho,
+                                                   alpha_pi, beta_pi, alpha_theta, beta_theta,
+                                                   alpha = 0.01) {
   # pi -> u -> T
   # theta -> v -> S
   # 1. define a grid of points
@@ -91,17 +162,17 @@ compute_bayesian_credible_interval <- function(n_trt, n_cntrl, k_trt, k_cntrl, r
   # 8. compute the mean, credible interval, and upper credible limit of the posteriors
   theta_mean <- compute_posterior_mean(theta_posterior, exp_v_grid)
   pi_mean <- compute_posterior_mean(pi_posterior, exp_u_grid)
-  theta_upper_credible_limit <- compute_upper_credible_limit(theta_posterior, exp_v_grid, alpha)
-  pi_upper_credible_limit <- compute_upper_credible_limit(pi_posterior, exp_u_grid, alpha)
+  theta_credible_interval <- compute_credible_interval(theta_posterior, exp_v_grid, alpha)
+  pi_credible_interval <- compute_credible_interval(pi_posterior, exp_u_grid, alpha)
   theta_density_df <- data.frame(theta = exp_v_grid, density = theta_posterior)
   pi_density_df <- data.frame(pi = exp_u_grid, density = pi_posterior)
 
   # 9. prepare output
   ret <- list(theta_mean = theta_mean,
-              theta_upper_credible_limit = theta_upper_credible_limit,
+              theta_credible_interval = theta_credible_interval,
               theta_density_df = theta_density_df,
               pi_mean = pi_mean,
-              pi_upper_credible_limit = pi_upper_credible_limit,
+              pi_credible_interval = pi_credible_interval,
               pi_density_df = pi_density_df)
 }
 
@@ -109,8 +180,12 @@ compute_posterior_mean <- function(posterior, x_grid) {
   sum(posterior * x_grid)
 }
 
-compute_upper_credible_limit <- function(posterior, x_grid, alpha) {
-  x_grid[min(which(cumsum(posterior) >= 1 - alpha))]
+compute_credible_interval <- function(posterior, x_grid, alpha) {
+  csum <- cumsum(posterior)
+  lower_bound <- x_grid[min(which(csum >= alpha/2))]
+  upper_bound <- x_grid[min(which(csum >= 1 - alpha/2))]
+  one_sided_bound <- x_grid[min(which(csum >= 1 - alpha))]
+  c(lower_bound = lower_bound, upper_bound = upper_bound, one_sided_bound = one_sided_bound)
 }
 
 #' Solve for Beta hyperparameters from a target mean and variance
