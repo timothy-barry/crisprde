@@ -38,7 +38,7 @@
 run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 0.99, rho = NULL,
                                                outlier_mad_thresh = 4, min_mutated_read_count = 50L,
                                                bias_variance_param = 0.5, alpha_pi = 15, beta_pi = 350,
-                                               alpha_theta = 1, beta_theta = 1) {
+                                               alpha_theta = 1, beta_theta = 1, print_progress = TRUE) {
   # 1. extract the data
   n_mat_trt <- data_list$n_mat_trt
   n_mat_cntrl <- data_list$n_mat_cntrl
@@ -65,7 +65,7 @@ run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 
 
   # 4. run the Bayesian estimation procedure for each amplicon
   amplicon_wise_res_list <- lapply(X = seq_len(ncol(n_mat_trt)), FUN = function(j) {
-    print(paste0("Running analysis on amplicon ", data_list$amplicon_ids[j]))
+    if (print_progress) print(paste0("Running analysis on amplicon ", data_list$amplicon_ids[j]))
     res <- compute_bayesian_estimate_for_amplicon(n_trt = n_mat_trt[,j],
                                                   n_cntrl = n_mat_cntrl[,j],
                                                   k_trt = k_mat_trt[,j],

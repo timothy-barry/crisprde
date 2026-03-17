@@ -41,10 +41,10 @@ make_bayesian_density_plot <- function(density_df, parameter, title_text, line_c
 #' make_prior_density_plot(parameter = "pi", alpha = 2, beta = 50, line_color = "firebrick")
 make_prior_density_plot <- function(alpha, beta, parameter = c("theta", "pi"),
                                     n_grid = 1000L, line_color = "dodgerblue3",
-                                    xmin = .Machine$double.eps, xmax = 1 - .Machine$double.eps) {
+                                    x_limits = c(0, 1)) {
   parameter <- match.arg(parameter)
   n_grid <- as.integer(n_grid)
-  x_grid <- seq(from = xmin, to = xmax, length.out = n_grid)
+  x_grid <- seq(from = x_limits[1], to = x_limits[2], length.out = n_grid)
   density_df <- data.frame(
     value = x_grid,
     density = stats::dbeta(x_grid, shape1 = alpha, shape2 = beta)
@@ -59,7 +59,7 @@ make_prior_density_plot <- function(alpha, beta, parameter = c("theta", "pi"),
     parameter = parameter,
     title_text = title_text,
     line_color = line_color,
-    x_limits = c(xmin, xmax)
+    x_limits = x_limits
   )
 }
 
