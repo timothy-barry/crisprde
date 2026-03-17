@@ -153,10 +153,14 @@ make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
                                       color_by_significance = FALSE,
                                       highlight_upper_ci_exceeds = FALSE,
                                       upper_ci_threshold = 0.001) {
+  if (!("significant" %in% names(result_df))) {
+    result_df$significant <- FALSE
+  }
+
   result_df <- result_df |>
     dplyr::mutate(
       Significant = significant,
-      upper_ci_flag = theta_hat_upper_ci > upper_ci_threshold
+      upper_ci_flag = theta_upper_ci > upper_ci_threshold
     )
 
   if (color_by_significance && highlight_upper_ci_exceeds) {
@@ -164,42 +168,42 @@ make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
       data = result_df,
       mapping = ggplot2::aes(
         x = amplicon_id,
-        y = theta_hat_clipped,
+        y = theta_hat,
         color = Significant
       )
     ) +
       ggplot2::geom_point(size = point_size) + ggplot2::theme_bw() +
       ggplot2::theme_bw() +
-      ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_hat_lower_ci,
-                                                    ymax = theta_hat_upper_ci, width = 0,
+      ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_lower_ci,
+                                                    ymax = theta_upper_ci, width = 0,
                                                     color = Significant)) +
       ggplot2::scale_color_manual(values = c("FALSE" = "black", "TRUE" = "dodgerblue2"))
   } else if (color_by_significance) {
     my_plot <- ggplot2::ggplot(
       data = result_df,
-      mapping = ggplot2::aes(x = amplicon_id, y = theta_hat_clipped, color = Significant)
+      mapping = ggplot2::aes(x = amplicon_id, y = theta_hat, color = Significant)
     ) +
       ggplot2::geom_point(size = point_size) + ggplot2::theme_bw() +
       ggplot2::theme_bw() +
-      ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_hat_lower_ci,
-                                                    ymax = theta_hat_upper_ci, width = 0)) +
+      ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_lower_ci,
+                                                    ymax = theta_upper_ci, width = 0)) +
       ggplot2::scale_color_manual(values = c("FALSE" = "black", "TRUE" = "dodgerblue2"))
   } else if (highlight_upper_ci_exceeds) {
     my_plot <- ggplot2::ggplot(
       data = result_df,
-      mapping = ggplot2::aes(x = amplicon_id, y = theta_hat_clipped)
+      mapping = ggplot2::aes(x = amplicon_id, y = theta_hat)
     ) +
       ggplot2::geom_point(size = point_size) + ggplot2::theme_bw() +
       ggplot2::theme_bw() +
-      ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_hat_lower_ci,
-                                                    ymax = theta_hat_upper_ci, width = 0))
+      ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_lower_ci,
+                                                    ymax = theta_upper_ci, width = 0))
   } else {
     my_plot <- ggplot2::ggplot(data = result_df,
-                               mapping = ggplot2::aes(x = amplicon_id, y = theta_hat_clipped)) +
+                               mapping = ggplot2::aes(x = amplicon_id, y = theta_hat)) +
       ggplot2::geom_point(size = point_size) + ggplot2::theme_bw() +
       ggplot2::theme_bw() +
-      ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_hat_lower_ci,
-                                                    ymax = theta_hat_upper_ci, width = 0))
+      ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_lower_ci,
+                                                    ymax = theta_upper_ci, width = 0))
   }
 
   my_plot <- my_plot +
@@ -212,7 +216,7 @@ make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
       ggplot2::geom_point(
         data = result_df |>
           dplyr::filter(upper_ci_flag),
-        ggplot2::aes(x = amplicon_id, y = theta_hat_clipped, shape = "Upper CI exceeds safety threshold"),
+        ggplot2::aes(x = amplicon_id, y = theta_hat, shape = "Upper CI exceeds safety threshold"),
         inherit.aes = FALSE,
         size = point_size + 1.1,
         color = "black"

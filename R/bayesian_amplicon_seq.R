@@ -1,7 +1,24 @@
+#' Run Bayesian amplicon-seq analysis
+#'
+#' Run Bayesian analysis for each amplicon and return posterior summaries.
+#'
+#' @param data_list List containing `n_mat_trt`, `n_mat_cntrl`, `k_mat_trt`, `k_mat_cntrl`, and `amplicon_ids`.
+#' @param nominal_ci_coverage Credible interval coverage level.
+#' @param rho Optional scalar dispersion value to use for every amplicon.
+#' @param outlier_mad_thresh MAD threshold used when detecting dispersion outliers.
+#' @param min_mutated_read_count Minimum total mutated read count required for an amplicon to contribute to dispersion estimation.
+#' @param bias_variance_param Weight on the amplicon-specific pilot dispersion for high-information amplicons.
+#' @param alpha_pi,beta_pi Beta prior hyperparameters for `pi`.
+#' @param alpha_theta,beta_theta Beta prior hyperparameters for `theta`.
+#'
+#' @returns A list containing `result_df`, `dispersion_diagnostics`, `theta_posterior_density_df`, and `pi_posterior_density_df`.
+#' @export
+#'
+#' @examples
+#'
 run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 0.99, rho = NULL,
                                                outlier_mad_thresh = 4, min_mutated_read_count = 50L,
-                                               bias_variance_param = 0.5,
-                                               alpha_pi = 15, beta_pi = 350,
+                                               bias_variance_param = 0.5, alpha_pi = 15, beta_pi = 350,
                                                alpha_theta = 1, beta_theta = 1) {
   # 1. extract the data
   n_mat_trt <- data_list$n_mat_trt
@@ -38,6 +55,7 @@ run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 
                                                   alpha_pi = alpha_pi, beta_pi = beta_pi,
                                                   alpha_theta = alpha_theta, beta_theta = beta_theta,
                                                   alpha = 1 - nominal_ci_coverage)
+    amplicon_ids <- data_list$amplicon_ids
     res$amplicon_id <- amplicon_ids[j]
     return(res)
   })

@@ -60,7 +60,7 @@ k_cntrl <- data_list$k_mat_cntrl[,1]
 rho <- 5e-5
 
 # set the priors
-params <- select_beta_hyperparameters(mean = 0.01, variance = 1e-4)
+params <- select_beta_hyperparameters(mean = 0.04, variance = 1e-4)
 alpha_pi <- params[["alpha"]]
 beta_pi <- params[["beta"]]
 alpha_theta <- 1

@@ -95,7 +95,7 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' make_amplicon_seq_ci_plot(res$result_df) |> plot()
 #' make_amplicon_seq_p_value_plot(res$result_df) |> plot()
 #' make_pilot_dispersion_plot(res) |> plot()
-run_freqentist_amplicon_seq_analysis <- function(data_list, editing_threshold = 0, nominal_ci_coverage = 0.95,
+run_freqentist_amplicon_seq_analysis <- function(data_list, editing_threshold = 0, nominal_ci_coverage = 0.99,
                                                  nominal_fdr = 0.1, rho = NULL, tail = "right",
                                                  outlier_mad_thresh = 4, min_mutated_read_count = 50L,
                                                  bias_variance_param = 0.5) {

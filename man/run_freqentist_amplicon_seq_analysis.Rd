@@ -7,7 +7,7 @@
 run_freqentist_amplicon_seq_analysis(
   data_list,
   editing_threshold = 0,
-  nominal_ci_coverage = 0.95,
+  nominal_ci_coverage = 0.99,
   nominal_fdr = 0.1,
   rho = NULL,
   tail = "right",
