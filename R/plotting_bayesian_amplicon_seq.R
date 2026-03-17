@@ -40,8 +40,8 @@ make_bayesian_density_plot <- function(density_df, parameter, title_text, line_c
 #' make_prior_density_plot(parameter = "theta", alpha = 1, beta = 1)
 #' make_prior_density_plot(parameter = "pi", alpha = 2, beta = 50, line_color = "firebrick")
 make_prior_density_plot <- function(alpha, beta, parameter = c("theta", "pi"),
-                                         n_grid = 1000L, line_color = "dodgerblue3",
-                                         xmin = .Machine$double.eps, xmax = 1 - .Machine$double.eps) {
+                                    n_grid = 1000L, line_color = "dodgerblue3",
+                                    xmin = .Machine$double.eps, xmax = 1 - .Machine$double.eps) {
   parameter <- match.arg(parameter)
   n_grid <- as.integer(n_grid)
   x_grid <- seq(from = xmin, to = xmax, length.out = n_grid)
@@ -66,10 +66,11 @@ make_prior_density_plot <- function(alpha, beta, parameter = c("theta", "pi"),
 
 #' Plot the posterior density from Bayesian amplicon-seq analysis
 #'
-#' Plot the marginal posterior density of `theta` or `pi` returned by
-#' [compute_bayesian_credible_interval()].
+#' Plot the marginal posterior density of `theta` or `pi` for one amplicon.
 #'
-#' @param result Output list returned by [compute_bayesian_credible_interval()].
+#' @param posterior_density_df Combined posterior density table from
+#'   [run_bayesian_amplicon_seq_analysis()].
+#' @param amplicon_id Amplicon identifier to plot.
 #' @param parameter Which posterior to plot, either `"theta"` or `"pi"`.
 #' @param line_color Color of the density curve.
 #' @param x_limits Length-2 numeric vector giving the x-axis plotting window.
@@ -78,23 +79,22 @@ make_prior_density_plot <- function(alpha, beta, parameter = c("theta", "pi"),
 #' @export
 #'
 #' @examples
-#' result <- list(
-#'   theta_mean = 0.025,
-#'   theta_density_df = data.frame(theta = seq(0, 1, length.out = 200),
-#'                                 density = stats::dbeta(seq(0, 1, length.out = 200), 15, 585))
+#' posterior_density_df <- data.frame(
+#'   theta = seq(0, 1, length.out = 200),
+#'   density = stats::dbeta(seq(0, 1, length.out = 200), 15, 585),
+#'   amplicon_id = "amplicon_1"
 #' )
-#' make_posterior_density_plot(result, parameter = "theta", x_limits = c(0, 0.1))
-make_posterior_density_plot <- function(result, parameter = c("theta", "pi"),
-                                        line_color = "darkorange3",
-                                        x_limits = c(0, 1)) {
-  parameter <- match.arg(parameter)
-  density_name <- paste0(parameter, "_density_df")
-  density_df <- result[[density_name]]
-  density_df <- data.frame(
-    value = density_df[[parameter]],
-    density = density_df[["density"]]
-  )
-  title_text <- paste0("Posterior density of ", parameter)
+#' make_posterior_density_plot(
+#'   posterior_density_df = posterior_density_df,
+#'   amplicon_id = "amplicon_1",
+#'   parameter = "theta",
+#'   x_limits = c(0, 0.1)
+#' )
+make_posterior_density_plot <- function(posterior_density_df, amplicon_id_to_plot, parameter,
+                                        line_color = "darkorange3", x_limits = c(0, 1)) {
+  density_df <- posterior_density_df |> dplyr::filter(amplicon_id == amplicon_id_to_plot)
+  density_df$value <- density_df[[parameter]]
+  title_text <- paste0("Posterior density of ", parameter, " (", amplicon_id_to_plot, ")")
 
   make_bayesian_density_plot(
     density_df = density_df,

@@ -82,6 +82,7 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' @export
 #'
 #' @examples
+#' # generate data
 #' set.seed(2)
 #' p <- 25L
 #' amplicon_ids <- factor(x = paste0("amplicon_", seq_len(p)), levels = paste0("amplicon_", seq_len(p)))
@@ -89,12 +90,14 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
 #'                                                   n_amplicons_nonzero_editing = 2L, beta_binom_rho,
 #'                                                   amplicon_ids = amplicon_ids)
-#' res <- run_freqentist_amplicon_seq_analysis(data_list)
+#'
+#' # run analysis
+#' res_freq <- run_freqentist_amplicon_seq_analysis(data_list)
 #'
 #' # make plots
-#' make_amplicon_seq_ci_plot(res$result_df) |> plot()
-#' make_amplicon_seq_p_value_plot(res$result_df) |> plot()
-#' make_pilot_dispersion_plot(res) |> plot()
+#' make_pilot_dispersion_plot(res_freq) |> plot()
+#' make_amplicon_seq_ci_plot(res_freq$result_df) |> plot()
+#' make_amplicon_seq_p_value_plot(res_freq$result_df) |> plot()
 run_freqentist_amplicon_seq_analysis <- function(data_list, editing_threshold = 0, nominal_ci_coverage = 0.99,
                                                  nominal_fdr = 0.1, rho = NULL, tail = "right",
                                                  outlier_mad_thresh = 4, min_mutated_read_count = 50L,

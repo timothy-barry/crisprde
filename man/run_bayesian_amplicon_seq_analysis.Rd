@@ -40,3 +40,25 @@ A list containing \code{result_df}, \code{dispersion_diagnostics}, \code{theta_p
 \description{
 Run Bayesian analysis for each amplicon and return posterior summaries.
 }
+\examples{
+set.seed(2)
+p <- 25L
+amplicon_ids <- factor(x = paste0("amplicon_", seq_len(p)), levels = paste0("amplicon_", seq_len(p)))
+beta_binom_rho <- c(0.005, rep(5e-4, times = p - 1L))
+data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05, editing_rate = 0.15,
+                                                  n_amplicons_nonzero_editing = 2L, beta_binom_rho,
+                                                  amplicon_ids = amplicon_ids)
+
+# run analysis
+alpha_theta <- 1
+beta_theta <- 1
+res_bayes <- run_bayesian_amplicon_seq_analysis(data_list = data_list, alpha_theta = alpha_theta, beta_theta = beta_theta)
+theta_posterior_density_df <- res_bayes$theta_posterior_density_df
+
+# make plots
+make_pilot_dispersion_plot(res_bayes) |> plot()
+make_amplicon_seq_ci_plot(res_bayes$result_df) |> plot()
+p_theta_prior <- make_prior_density_plot(alpha = alpha_theta, beta = beta_theta, parameter = "theta")
+p_theta_posterior_amplicon_1 <- make_posterior_density_plot(posterior_density_df = theta_posterior_density_df, amplicon_id = "amplicon_1", parameter = "theta", x_limits = c(0.1, 0.25))
+p_theta_posterior_amplicon_amplicon_3 <- make_posterior_density_plot(posterior_density_df = theta_posterior_density_df, amplicon_id = "amplicon_3", parameter = "theta", x_limits = c(0, 0.02))
+}

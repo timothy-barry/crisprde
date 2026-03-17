@@ -5,33 +5,41 @@
 \title{Plot the posterior density from Bayesian amplicon-seq analysis}
 \usage{
 make_posterior_density_plot(
-  result,
-  parameter = c("theta", "pi"),
+  posterior_density_df,
+  amplicon_id_to_plot,
+  parameter,
   line_color = "darkorange3",
   x_limits = c(0, 1)
 )
 }
 \arguments{
-\item{result}{Output list returned by \code{\link[=compute_bayesian_credible_interval]{compute_bayesian_credible_interval()}}.}
+\item{posterior_density_df}{Combined posterior density table from
+\code{\link[=run_bayesian_amplicon_seq_analysis]{run_bayesian_amplicon_seq_analysis()}}.}
 
 \item{parameter}{Which posterior to plot, either \code{"theta"} or \code{"pi"}.}
 
 \item{line_color}{Color of the density curve.}
 
 \item{x_limits}{Length-2 numeric vector giving the x-axis plotting window.}
+
+\item{amplicon_id}{Amplicon identifier to plot.}
 }
 \value{
 A \code{ggplot2} object showing the requested posterior density.
 }
 \description{
-Plot the marginal posterior density of \code{theta} or \code{pi} returned by
-\code{\link[=compute_bayesian_credible_interval]{compute_bayesian_credible_interval()}}.
+Plot the marginal posterior density of \code{theta} or \code{pi} for one amplicon.
 }
 \examples{
-result <- list(
-  theta_mean = 0.025,
-  theta_density_df = data.frame(theta = seq(0, 1, length.out = 200),
-                                density = stats::dbeta(seq(0, 1, length.out = 200), 15, 585))
+posterior_density_df <- data.frame(
+  theta = seq(0, 1, length.out = 200),
+  density = stats::dbeta(seq(0, 1, length.out = 200), 15, 585),
+  amplicon_id = "amplicon_1"
 )
-make_posterior_density_plot(result, parameter = "theta", x_limits = c(0, 0.1))
+make_posterior_density_plot(
+  posterior_density_df = posterior_density_df,
+  amplicon_id = "amplicon_1",
+  parameter = "theta",
+  x_limits = c(0, 0.1)
+)
 }
