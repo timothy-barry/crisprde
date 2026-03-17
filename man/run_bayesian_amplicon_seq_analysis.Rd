@@ -59,6 +59,6 @@ theta_posterior_density_df <- res_bayes$theta_posterior_density_df
 make_pilot_dispersion_plot(res_bayes) |> plot()
 make_amplicon_seq_ci_plot(res_bayes$result_df) |> plot()
 p_theta_prior <- make_prior_density_plot(alpha = alpha_theta, beta = beta_theta, parameter = "theta")
-p_theta_posterior_amplicon_1 <- make_posterior_density_plot(posterior_density_df = theta_posterior_density_df, amplicon_id = "amplicon_1", parameter = "theta", x_limits = c(0.1, 0.25))
-p_theta_posterior_amplicon_amplicon_3 <- make_posterior_density_plot(posterior_density_df = theta_posterior_density_df, amplicon_id = "amplicon_3", parameter = "theta", x_limits = c(0, 0.02))
+p_theta_posterior_amplicon_1 <- make_posterior_density_plot(posterior_density_df = theta_posterior_density_df, amplicon_id_to_plot = "amplicon_1", parameter = "theta", x_limits = c(0.1, 0.25))
+p_theta_posterior_amplicon_amplicon_3 <- make_posterior_density_plot(posterior_density_df = theta_posterior_density_df, amplicon_id_to_plot = "amplicon_3", parameter = "theta", x_limits = c(0, 0.02))
 }

@@ -70,7 +70,11 @@ beta_theta <- 1
 p_prior <- cowplot::plot_grid(make_prior_density_plot(alpha = alpha_theta, beta = beta_theta, parameter = "theta"),
                               make_prior_density_plot(alpha = alpha_pi, beta = beta_pi, parameter = "pi"))
 result <- compute_bayesian_estimate_for_amplicon(n_trt, n_cntrl, k_trt, k_cntrl, rho, alpha_pi, beta_pi, alpha_theta, beta_theta)
-p_posterior <- cowplot::plot_grid(make_posterior_density_plot(result = result, parameter = "theta", x_limits = c(0, 0.01)),
-                                  make_posterior_density_plot(result = result, parameter = "pi", x_limits = c(0, 0.01)))
+theta_posterior_density_df <- dplyr::mutate(result$theta_density_df, amplicon_id = "amplicon_1")
+pi_posterior_density_df <- dplyr::mutate(result$pi_density_df, amplicon_id = "amplicon_1")
+p_posterior <- cowplot::plot_grid(
+  make_posterior_density_plot(theta_posterior_density_df, amplicon_id_to_plot = "amplicon_1", parameter = "theta", x_limits = c(0, 0.01)),
+  make_posterior_density_plot(pi_posterior_density_df, amplicon_id_to_plot = "amplicon_1", parameter = "pi", x_limits = c(0, 0.01))
+)
 
 }

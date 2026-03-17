@@ -70,7 +70,7 @@ make_prior_density_plot <- function(alpha, beta, parameter = c("theta", "pi"),
 #'
 #' @param posterior_density_df Combined posterior density table from
 #'   [run_bayesian_amplicon_seq_analysis()].
-#' @param amplicon_id Amplicon identifier to plot.
+#' @param amplicon_id_to_plot Amplicon identifier to plot.
 #' @param parameter Which posterior to plot, either `"theta"` or `"pi"`.
 #' @param line_color Color of the density curve.
 #' @param x_limits Length-2 numeric vector giving the x-axis plotting window.
@@ -86,7 +86,7 @@ make_prior_density_plot <- function(alpha, beta, parameter = c("theta", "pi"),
 #' )
 #' make_posterior_density_plot(
 #'   posterior_density_df = posterior_density_df,
-#'   amplicon_id = "amplicon_1",
+#'   amplicon_id_to_plot = "amplicon_1",
 #'   parameter = "theta",
 #'   x_limits = c(0, 0.1)
 #' )

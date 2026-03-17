@@ -16,13 +16,13 @@ make_posterior_density_plot(
 \item{posterior_density_df}{Combined posterior density table from
 \code{\link[=run_bayesian_amplicon_seq_analysis]{run_bayesian_amplicon_seq_analysis()}}.}
 
+\item{amplicon_id_to_plot}{Amplicon identifier to plot.}
+
 \item{parameter}{Which posterior to plot, either \code{"theta"} or \code{"pi"}.}
 
 \item{line_color}{Color of the density curve.}
 
 \item{x_limits}{Length-2 numeric vector giving the x-axis plotting window.}
-
-\item{amplicon_id}{Amplicon identifier to plot.}
 }
 \value{
 A \code{ggplot2} object showing the requested posterior density.
@@ -38,7 +38,7 @@ posterior_density_df <- data.frame(
 )
 make_posterior_density_plot(
   posterior_density_df = posterior_density_df,
-  amplicon_id = "amplicon_1",
+  amplicon_id_to_plot = "amplicon_1",
   parameter = "theta",
   x_limits = c(0, 0.1)
 )
