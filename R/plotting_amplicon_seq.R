@@ -42,6 +42,15 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
 
   my_plot <- ggplot2::ggplot(result_df, ggplot2::aes(x = amplicon_id)) +
     ggplot2::theme_bw() +
+    ggplot2::geom_point(
+      data = final_df,
+      ggplot2::aes(y = rho_hat, shape = "Final rho"),
+      color = "grey55",
+      size = 3,
+      stroke = 0.9,
+      fill = NA,
+      show.legend = TRUE
+    ) +
     ggplot2::geom_hline(
       data = line_df,
       ggplot2::aes(yintercept = yintercept, color = line_label, linetype = line_label),
@@ -52,15 +61,6 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
       ggplot2::aes(y = pilot_rho_hat, shape = "Pilot rho"),
       color = "black",
       size = 2,
-      show.legend = TRUE
-    ) +
-    ggplot2::geom_point(
-      data = final_df,
-      ggplot2::aes(y = rho_hat, shape = "Final rho"),
-      color = "grey55",
-      size = 3,
-      stroke = 0.9,
-      fill = NA,
       show.legend = TRUE
     ) +
     ggplot2::scale_color_manual(
@@ -87,7 +87,7 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
     ggplot2::scale_y_continuous(
       trans = scales::pseudo_log_trans(sigma = 5e-5, base = 10),
       breaks = c(0, 1e-4, 1e-3, 1e-2, 1e-1),
-      expand = ggplot2::expansion(mult = c(0.08, 0.18))
+      expand = ggplot2::expansion(mult = c(0.02, 0.1))
     ) +
     ggplot2::scale_x_discrete(expand = ggplot2::expansion(add = 1)) +
     ggplot2::coord_cartesian(clip = "off") +
@@ -150,18 +150,31 @@ make_pilot_dispersion_plot <- function(res, label_outliers = FALSE) {
 }
 
 make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
+                                      interval_linewidth = 0.4,
                                       color_by_significance = FALSE,
                                       highlight_upper_ci_exceeds = FALSE,
-                                      upper_ci_threshold = 0.001) {
+                                      upper_ci_threshold = 0.001,
+                                      use_pseudo_log_y_axis = FALSE,
+                                      highlight_point_size = NULL) {
   if (!("significant" %in% names(result_df))) {
     result_df$significant <- FALSE
+  }
+  if (is.null(highlight_point_size)) {
+    highlight_point_size <- point_size + 0.6
   }
 
   result_df <- result_df |>
     dplyr::mutate(
+      amplicon_id = factor(amplicon_id, levels = unique(amplicon_id)),
       Significant = significant,
       upper_ci_flag = theta_upper_ci > upper_ci_threshold
     )
+
+  base_point_data <- if (highlight_upper_ci_exceeds) {
+    dplyr::filter(result_df, !upper_ci_flag)
+  } else {
+    result_df
+  }
 
   if (color_by_significance && highlight_upper_ci_exceeds) {
     my_plot <- ggplot2::ggplot(
@@ -172,42 +185,61 @@ make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
         color = Significant
       )
     ) +
-      ggplot2::geom_point(size = point_size) + ggplot2::theme_bw() +
+      ggplot2::geom_point(data = base_point_data, size = point_size) + ggplot2::theme_bw() +
       ggplot2::theme_bw() +
       ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_lower_ci,
                                                     ymax = theta_upper_ci, width = 0,
-                                                    color = Significant)) +
+                                                    color = Significant),
+                             linewidth = interval_linewidth) +
       ggplot2::scale_color_manual(values = c("FALSE" = "black", "TRUE" = "dodgerblue2"))
   } else if (color_by_significance) {
     my_plot <- ggplot2::ggplot(
       data = result_df,
       mapping = ggplot2::aes(x = amplicon_id, y = theta_hat, color = Significant)
     ) +
-      ggplot2::geom_point(size = point_size) + ggplot2::theme_bw() +
+      ggplot2::geom_point(data = base_point_data, size = point_size) + ggplot2::theme_bw() +
       ggplot2::theme_bw() +
       ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_lower_ci,
-                                                    ymax = theta_upper_ci, width = 0)) +
+                                                    ymax = theta_upper_ci, width = 0),
+                             linewidth = interval_linewidth) +
       ggplot2::scale_color_manual(values = c("FALSE" = "black", "TRUE" = "dodgerblue2"))
   } else if (highlight_upper_ci_exceeds) {
     my_plot <- ggplot2::ggplot(
       data = result_df,
       mapping = ggplot2::aes(x = amplicon_id, y = theta_hat)
     ) +
-      ggplot2::geom_point(size = point_size) + ggplot2::theme_bw() +
+      ggplot2::geom_point(data = base_point_data, size = point_size) + ggplot2::theme_bw() +
       ggplot2::theme_bw() +
       ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_lower_ci,
-                                                    ymax = theta_upper_ci, width = 0))
+                                                    ymax = theta_upper_ci, width = 0),
+                             linewidth = interval_linewidth)
   } else {
     my_plot <- ggplot2::ggplot(data = result_df,
                                mapping = ggplot2::aes(x = amplicon_id, y = theta_hat)) +
-      ggplot2::geom_point(size = point_size) + ggplot2::theme_bw() +
+      ggplot2::geom_point(data = base_point_data, size = point_size) + ggplot2::theme_bw() +
       ggplot2::theme_bw() +
       ggplot2::geom_errorbar(mapping = ggplot2::aes(ymin = theta_lower_ci,
-                                                    ymax = theta_upper_ci, width = 0))
+                                                    ymax = theta_upper_ci, width = 0),
+                             linewidth = interval_linewidth)
+  }
+
+  y_scale <- if (use_pseudo_log_y_axis) {
+    ggplot2::scale_y_continuous(
+      trans = scales::pseudo_log_trans(sigma = 5e-5, base = 10),
+      breaks = c(0.001, 0.01, 0.1, 0.5, 1),
+      labels = scales::label_percent(accuracy = 0.01),
+      limits = ylim,
+      expand = ggplot2::expansion(mult = c(0.02, 0.02))
+    )
+  } else {
+    ggplot2::scale_y_continuous(
+      labels = scales::label_percent(),
+      limits = ylim
+    )
   }
 
   my_plot <- my_plot +
-    ggplot2::scale_y_continuous(labels = scales::label_percent(), limits = ylim) +
+    y_scale +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     ggplot2::xlab("Amplicon") + ggplot2::ylab("Estimated editing rate")
 
@@ -218,7 +250,7 @@ make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
           dplyr::filter(upper_ci_flag),
         ggplot2::aes(x = amplicon_id, y = theta_hat, shape = "Upper CI exceeds safety threshold"),
         inherit.aes = FALSE,
-        size = point_size + 1.1,
+        size = highlight_point_size,
         color = "black"
       ) +
       ggplot2::scale_shape_manual(
