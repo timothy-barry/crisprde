@@ -14,7 +14,8 @@ run_bayesian_amplicon_seq_analysis(
   alpha_pi = 15,
   beta_pi = 350,
   alpha_theta = 1,
-  beta_theta = 1
+  beta_theta = 1,
+  print_progress = TRUE
 )
 }
 \arguments{

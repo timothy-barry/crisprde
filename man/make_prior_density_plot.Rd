@@ -10,8 +10,7 @@ make_prior_density_plot(
   parameter = c("theta", "pi"),
   n_grid = 1000L,
   line_color = "dodgerblue3",
-  xmin = .Machine$double.eps,
-  xmax = 1 - .Machine$double.eps
+  x_limits = c(0, 1)
 )
 }
 \arguments{

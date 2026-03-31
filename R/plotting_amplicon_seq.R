@@ -169,6 +169,7 @@ make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
       Significant = significant,
       upper_ci_flag = theta_upper_ci > upper_ci_threshold
     )
+  amplicon_levels <- levels(result_df$amplicon_id)
 
   base_point_data <- if (highlight_upper_ci_exceeds) {
     dplyr::filter(result_df, !upper_ci_flag)
@@ -239,6 +240,7 @@ make_amplicon_seq_ci_plot <- function(result_df, ylim = NULL, point_size = 1.2,
   }
 
   my_plot <- my_plot +
+    ggplot2::scale_x_discrete(limits = amplicon_levels, drop = FALSE) +
     y_scale +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     ggplot2::xlab("Amplicon") + ggplot2::ylab("Estimated editing rate")
