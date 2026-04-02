@@ -14,8 +14,9 @@
 #' # TO-DO: try to add position of the mutation relative to the cut site (whatever that might mean).
 #' # Note: this field would require us to know the cutsite.
 process_crispresso_allele_table_cas9 <- function(allele_table_fp) {
-  allele_tab <- readr::read_delim(allele_table_fp, col_types = c("cccciiiid"))
-  colnames(allele_tab) <- c("aligned_seq", "ref_seq", "ref_name", "status", "n_deleted", "n_inserted", "n_mutated", "n_reads", "percent_reads")
+  allele_tab <- readr::read_delim(allele_table_fp) |>
+    dplyr::select(aligned_seq = Aligned_Sequence, ref_seq = Reference_Sequence,
+                  status = Read_Status, n_deleted, n_inserted, n_reads = "#Reads")
   allele_tab$allele_id <- paste0(allele_tab$aligned_seq, ":", allele_tab$ref_seq)
 
   # 1. separate mutated from unmutated alleles (as determined by CRISPResso)
