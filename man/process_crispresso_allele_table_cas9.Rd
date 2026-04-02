@@ -10,12 +10,12 @@ process_crispresso_allele_table_cas9(allele_table_fp)
 \item{allele_table_fp}{the file path to the allele count table}
 }
 \value{
-a data frame with columns \code{allele_id} (giving the aligned sequence concatenated to the reference sequence, mutation_type (insertion, deletion, or complex), and mutation length)
+a data frame with columns \code{allele_id} (giving the aligned sequence concatenated to the reference sequence) \code{mutation_type }(insertion, deletion, or complex), \code{mutation_length}, \code{read_count}, and \code{mutated}. Alleles classified by CRISPResso as "unmodified" are collapsed into a single allele labeled "unmutated."
 }
 \description{
 This function assumes that CRISPRESSO has been run with stringent settings, in particular with \code{--ignore_substitutions}, \verb{quantification_window_size 1}, \code{--quantification_window_center -3}
 }
 \examples{
-allele_table_fp <- "/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/hiseq1_crispresso_output/GE0423-edited/CRISPResso_on_1450_OT_0000/Alleles_frequency_table_around_sgRNA_TGCTTGGTCGGCACTGATAG.txt"
+allele_table_fp <- "/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/hiseq1_crispresso_output/GE0423-edited/CRISPResso_on_1450_OT_0000/Alleles_frequency_table.txt"
 allele_feature_table <- process_crispresso_allele_table_cas9(allele_table_fp)
 }
