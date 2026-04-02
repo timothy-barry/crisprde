@@ -16,6 +16,6 @@ a data frame with columns \code{allele_id} (giving the aligned sequence concaten
 This function assumes that CRISPRESSO has been run with stringent settings, in particular with \code{--ignore_substitutions}, \verb{quantification_window_size 1}, \code{--quantification_window_center -3}
 }
 \examples{
-allele_table_fp <- "/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/crispresso_output_1617/GUIDE0724-africa-edited/CRISPResso_on_1617_OT_0000/Alleles_frequency_table_around_sgRNA_CTAACAGTTGCTTTTATCAC.txt"
+allele_table_fp <- "/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/hiseq1_crispresso_output/GE0423-edited/CRISPResso_on_1450_OT_0000/Alleles_frequency_table_around_sgRNA_TGCTTGGTCGGCACTGATAG.txt"
 allele_feature_table <- process_crispresso_allele_table_cas9(allele_table_fp)
 }
