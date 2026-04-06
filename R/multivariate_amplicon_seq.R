@@ -21,8 +21,8 @@ compute_basic_statistics_on_multivariate_amplicon_seq_data <- function(count_mat
   mutated_alleles <- colnames(cntrl_mat)[colnames(cntrl_mat) != "unmutated"]
 
   p_0_cntrl <- sum(cntrl_mat[,"unmutated"])/sum(cntrl_mat)
-  p_1_trt <- colSums(treated_mat[,mutated_alleles])/sum(treated_mat)
-  p_1_cntrl <- colSums(cntrl_mat[,mutated_alleles])/sum(cntrl_mat)
+  p_1_trt <- Matrix::colSums(treated_mat[,mutated_alleles])/sum(treated_mat)
+  p_1_cntrl <- Matrix::colSums(cntrl_mat[,mutated_alleles])/sum(cntrl_mat)
   theta_tilde <- pmax((p_1_trt - p_1_cntrl)/p_0_cntrl, 0)
   attributable_fraction <- ifelse(p_1_trt < 1e-12, NA_real_, (p_1_trt - p_1_cntrl)/p_1_trt)
 
@@ -56,6 +56,7 @@ collapse_count_matrix_by_allele <- function(count_matrix, allele_df,
                                             bucket_breaks = c(0L, 1L, 2L, 3L, 4L, 5L, 7L, 9L, Inf),
                                             bucket_labels = c("one", "two", "three", "four", "five", "six-seven", "eight-nine", "10+")) {
   unmutated_count_vect <- as.matrix(count_matrix[, "unmutated",drop=FALSE])
+  replicate_levels <- rownames(count_matrix)
   allele_df_sub <- allele_df |> dplyr::filter(allele_id != "unmutated")
   allele_df_sub$bucketed_length <- cut(x = allele_df_sub$mutation_length, breaks = bucket_breaks, labels = bucket_labels)
 
@@ -75,7 +76,6 @@ collapse_count_matrix_by_allele <- function(count_matrix, allele_df,
 
   # reconstruct sparse matrix
   mutation_bucket_levels <- unique(count_matrix_df_sum$mutation_bucket)
-  replicate_levels <- as.character(unique(count_matrix_df_sum$replicate_id))
   count_matrix_df_sum$mutation_bucket_idx <- match(count_matrix_df_sum$mutation_bucket, mutation_bucket_levels)
   count_matrix_df_sum$replicate_idx <- match(count_matrix_df_sum$replicate_id, replicate_levels)
   count_matrix <- Matrix::sparseMatrix(
