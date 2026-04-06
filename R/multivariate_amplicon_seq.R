@@ -9,7 +9,7 @@
 #' @export
 #'
 #' @examples
-#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1450_OT_0000.rds")
+#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1617_OT_0068.rds")
 #' count_matrix <- data_list$count_matrix
 #' covariate_df <- data_list$covariate_df
 compute_basic_statistics_on_multivariate_amplicon_seq_data <- function(count_matrix, covariate_df) {
@@ -24,7 +24,7 @@ compute_basic_statistics_on_multivariate_amplicon_seq_data <- function(count_mat
   p_1_trt <- Matrix::colSums(treated_mat[,mutated_alleles])/sum(treated_mat)
   p_1_cntrl <- Matrix::colSums(cntrl_mat[,mutated_alleles])/sum(cntrl_mat)
   theta_tilde <- pmax((p_1_trt - p_1_cntrl)/p_0_cntrl, 0)
-  attributable_fraction <- ifelse(p_1_trt < 1e-12, NA_real_, (p_1_trt - p_1_cntrl)/p_1_trt)
+  attributable_fraction <- pmax(ifelse(p_1_trt < 1e-12, NA_real_, (p_1_trt - p_1_cntrl)/p_1_trt), 0)
 
   out_df <- data.frame(allele_id = mutated_alleles,
                        theta_tilde = theta_tilde,
@@ -45,7 +45,7 @@ compute_basic_statistics_on_multivariate_amplicon_seq_data <- function(count_mat
 #' @export
 #'
 #' @examples
-#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1450_OT_0000.rds")
+#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1617_OT_0068.rds")
 #' count_matrix <- data_list$count_matrix
 #' allele_df <- data_list$allele_df
 #' covariate_df <- data_list$covariate_df
