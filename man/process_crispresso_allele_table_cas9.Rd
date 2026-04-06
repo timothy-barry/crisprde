@@ -18,4 +18,7 @@ This function assumes that CRISPRESSO has been run with stringent settings, in p
 \examples{
 allele_table_fp <- "/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/hiseq1_crispresso_output/GE0423-edited/CRISPResso_on_1450_OT_0000/Alleles_frequency_table.txt"
 allele_feature_table <- process_crispresso_allele_table_cas9(allele_table_fp)
+
+# TO-DO: try to add position of the mutation relative to the cut site (whatever that might mean).
+# Note: this field would require us to know the cutsite.
 }
