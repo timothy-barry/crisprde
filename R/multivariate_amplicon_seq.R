@@ -9,7 +9,7 @@
 #' @export
 #'
 #' @examples
-#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1617_OT_0068.rds")
+#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1450_OT_0000.rds")
 #' count_matrix <- data_list$count_matrix
 #' covariate_df <- data_list$covariate_df
 compute_basic_statistics_on_multivariate_amplicon_seq_data <- function(count_matrix, covariate_df) {
@@ -45,7 +45,7 @@ compute_basic_statistics_on_multivariate_amplicon_seq_data <- function(count_mat
 #' @export
 #'
 #' @examples
-#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1617_OT_0068.rds")
+#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1450_OT_0000.rds")
 #' count_matrix <- data_list$count_matrix
 #' allele_df <- data_list$allele_df
 #' covariate_df <- data_list$covariate_df
@@ -53,8 +53,8 @@ compute_basic_statistics_on_multivariate_amplicon_seq_data <- function(count_mat
 #' collapsed_res <- compute_basic_statistics_on_multivariate_amplicon_seq_data(collapsed_matrix, covariate_df)
 #'
 collapse_count_matrix_by_allele <- function(count_matrix, allele_df,
-                                            bucket_breaks = c(0L, 1L, 2L, 3L, 4L, 5L, 7L, 9L, Inf),
-                                            bucket_labels = c("one", "two", "three", "four", "five", "six-seven", "eight-nine", "10+")) {
+                                            bucket_breaks = c(seq(0L, 49L), Inf),
+                                            bucket_labels = c(seq(1L, 49L), "50+")) {
   unmutated_count_vect <- as.matrix(count_matrix[, "unmutated",drop=FALSE])
   replicate_levels <- rownames(count_matrix)
   allele_df_sub <- allele_df |> dplyr::filter(allele_id != "unmutated")
@@ -88,6 +88,8 @@ collapse_count_matrix_by_allele <- function(count_matrix, allele_df,
   colnames(count_matrix) <- mutation_bucket_levels
 
   # append the unmutated column
-  ret <- cbind(unmutated_count_vect, count_matrix)
-  return(ret)
+  collapsed_mat <- cbind(unmutated_count_vect, count_matrix)
+
+  # collapse the allele feature table
+  return(collapsed_mat)
 }

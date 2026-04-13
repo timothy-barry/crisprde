@@ -21,7 +21,7 @@ a data frame with columns \code{editing_rate} and \code{attributable_fraction}
 This function computes the editing rate and attributable fraction of each allele in a multivariate allele table.
 }
 \examples{
-data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1617_OT_0068.rds")
+data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1450_OT_0000.rds")
 count_matrix <- data_list$count_matrix
 covariate_df <- data_list$covariate_df
 }

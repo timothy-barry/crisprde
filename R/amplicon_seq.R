@@ -120,7 +120,8 @@ run_freqentist_amplicon_seq_analysis <- function(data_list, editing_threshold = 
   significant <- p.adjust(p = p_val_per_amplicon, method = "BH") <= nominal_fdr
 
   # 8. return output
-  to_return <- data.frame(amplicon_id = data_list$amplicon_ids,
+  amplicon_id <- if (!is.null(data_list$amplicon_ids)) data_list$amplicon_ids else colnames(n_mat_trt)
+  to_return <- data.frame(amplicon_id = amplicon_id,
                           rho_hat = rho_tilde_per_amplicon,
                           pilot_rho_hat = pilot_rho_tilde_per_amplicon,
                           dispersion_outlier = dispersion_outlier,

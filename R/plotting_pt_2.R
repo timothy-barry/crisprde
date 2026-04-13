@@ -258,3 +258,26 @@ plot_read_processing_results <- function(qc_df, plot_type = "combined", normaliz
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90))
   return(p)
 }
+
+make_bucket_specific_editing_plot <- function(collapsed_result) {
+  # process output
+  bucket_list <- strsplit(x = collapsed_result$allele_id, split = "_", fixed = TRUE)
+  collapsed_result$mutation_type <- sapply(X = bucket_list, FUN = function(l) l[[1]])
+  collapsed_result$mutation_length <- sapply(X = bucket_list, FUN = function(l) l[[2]]) |>
+    gsub(x = _, pattern = "+", replacement = "", fixed = TRUE) |> as.integer()
+  marginal_editing_rate <- sum(collapsed_result$theta_tilde)
+
+  # compute the cumulative bucket-specific editing rate
+  to_plot_cum <- collapsed_result |>
+    dplyr::group_by(mutation_type) |>
+    dplyr::arrange(mutation_length) |>
+    dplyr::mutate(cum_theta_tilde = cumsum(theta_tilde))
+
+  # make plot
+  p <- ggplot2::ggplot(data = to_plot_cum, mapping = ggplot2::aes(x = mutation_length, y = cum_theta_tilde)) +
+    ggplot2::geom_point(size = 0.7) + ggplot2::geom_line() + ggplot2::facet_grid(. ~ mutation_type) +
+    ggplot2::xlab("Mutation length") + ggplot2::ylab("Cumulative bucket-specific editing rate") +
+    ggplot2::theme_bw() +
+    ggplot2::geom_hline(yintercept = marginal_editing_rate, col = "firebrick2", linetype = "dashed") +
+    ggplot2::ylim(c(0, NA))
+}
