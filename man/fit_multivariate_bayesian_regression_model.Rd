@@ -6,9 +6,10 @@
 \usage{
 fit_multivariate_bayesian_regression_model(
   count_matrix,
-  X,
+  allele_df,
   covariate_df,
   rho_hat,
+  formula_object,
   mu_pi_block,
   kappa_pi_block,
   mu_theta,
@@ -37,8 +38,6 @@ allele_df <- collapsed_matrix_list$collapsed_allele_df
 to_keep <- allele_df$mutation_type \%in\% c(NA, "deletion")
 count_matrix <- count_matrix[,to_keep]
 allele_df <- allele_df[to_keep,]
-X <- allele_df |>
- dplyr::filter(mutation_type == "deletion")
 
 # get rho from univariate analysis
 dat_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/marginal_count_tables/data_list_by_grna.rds")[["1450"]]

@@ -15,7 +15,9 @@ generate_synthetic_multivariate_amplicon_seq_data(
   delta_mat,
   covariate_bound,
   rho,
-  r
+  r,
+  mu_reads,
+  theta_reads
 )
 }
 \arguments{
@@ -40,4 +42,9 @@ n_covariates <- 2L
 r <- 6L
 mu_reads <- 50000L
 theta_reads <- 10
+sim_data <- generate_synthetic_multivariate_amplicon_seq_data(n_mutation_types = n_mutation_types,
+n_alleles = n_alleles, n_covariates = n_covariates, pi_block = pi_block,
+theta = theta, phi_block = phi_block, gamma_mat = gamma_mat, delta_mat = delta_mat,
+covariate_bound = covariate_bound, rho = rho, r = r, mu_reads = mu_reads,
+theta_reads = theta_reads)
 }

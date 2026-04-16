@@ -86,9 +86,14 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 #' r <- 6L
 #' mu_reads <- 50000L
 #' theta_reads <- 10
+#' sim_data <- generate_synthetic_multivariate_amplicon_seq_data(n_mutation_types = n_mutation_types,
+#' n_alleles = n_alleles, n_covariates = n_covariates, pi_block = pi_block,
+#' theta = theta, phi_block = phi_block, gamma_mat = gamma_mat, delta_mat = delta_mat,
+#' covariate_bound = covariate_bound, rho = rho, r = r, mu_reads = mu_reads,
+#' theta_reads = theta_reads)
 generate_synthetic_multivariate_amplicon_seq_data <- function(n_mutation_types, n_alleles, n_covariates, pi_block, theta,
-                                                              phi_block, gamma_mat, delta_mat, covariate_bound, rho,
-                                                              r) {
+                                                              phi_block, gamma_mat, delta_mat, covariate_bound, rho, r,
+                                                              mu_reads, theta_reads) {
   # generate the covariate matrix for the different mutation types
   X_list <- lapply(X = seq_len(n_mutation_types), FUN = function(curr_mutation_type) {
     X <- replicate(n = n_covariates, expr = {
@@ -140,14 +145,18 @@ generate_synthetic_multivariate_amplicon_seq_data <- function(n_mutation_types, 
   Y <- rbind(Y_cntrl, Y_trt)
   X <- do.call(what = rbind, args = X_list)
   allele_df <- data.frame(allele_id = rownames(X),
-                          mutation_type = rep(paste0("type_", seq_len(n_mutation_types)), n_alleles),
-                          X)
+                          mutation_type = rep(paste0("type_", seq_len(n_mutation_types)),
+                                              n_alleles), X)
+  allele_df <- dplyr::bind_rows(data.frame(allele_id = "unmutated",
+                                           mutation_type = NA_character_), allele_df)
   rownames(allele_df) <- NULL
   rep_id <- paste0("rep_", seq_len(2 * r))
   covariate_df <- data.frame(rep_id = rep_id,
-                             treated = c(rep(TRUE, r), rep(FALSE, r)))
+                             treated = c(rep(FALSE, r), rep(TRUE, r)))
   rownames(Y) <- rep_id
-  l <- list(Y = Y, X = X, allele_df = allele_df, theta_tilde = theta_tilde, pi = pi, tau = tau)
+  colnames(Y) <- c("unmutated", allele_df$allele_id)
+  l <- list(Y = Y, X = X, allele_df = allele_df, covariate_df = covariate_df, theta_tilde = theta_tilde, pi = pi, tau = tau)
+  return(l)
 }
 
 
