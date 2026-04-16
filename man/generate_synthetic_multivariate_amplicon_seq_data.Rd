@@ -5,35 +5,39 @@
 \title{Generate synthetic multivariate amplicon-seq data}
 \usage{
 generate_synthetic_multivariate_amplicon_seq_data(
-  allele_feature_table,
-  use_observed_n_reads = FALSE,
-  sample_size_mu = 100000L,
-  sample_size_theta = 15L,
-  frac_mutated = 0.8,
-  n_rep = 3L,
-  rho = 2e-05,
-  beta_mut_length = -0.1
+  n_mutation_types,
+  n_alleles,
+  n_covariates,
+  pi_block,
+  theta,
+  phi_block,
+  gamma_mat,
+  delta_mat,
+  covariate_bound,
+  rho,
+  r
 )
 }
 \arguments{
-\item{allele_feature_table}{allele}
-
-\item{frac_mutated}{fraction of reads containing a mutation}
-
-\item{rho}{overdispersion parameter}
-
-\item{beta_mut_length}{model parameter controlling the relationship between mutation length and allele frequency}
-
-\item{n_reads}{number of reads (fixed across replicates)}
-}
-\value{
-a count table containing the data
+\item{delta}{}
 }
 \description{
-Generate synthetic, multivariate amplicon-seq data using an example allele table as input.
+Generate synthetic multivariate amplicon-seq data
 }
 \examples{
-allele_table_fp <- "/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/crispresso_output_1617/GUIDE0724-africa-edited/CRISPResso_on_1617_OT_0000/Alleles_frequency_table_around_sgRNA_CTAACAGTTGCTTTTATCAC.txt"
-allele_feature_table <- process_crispresso_allele_table_cas9(allele_table_fp)
-count_tab <- generate_synthetic_multivariate_amplicon_seq_data(allele_feature_table, n_reads = 100000L)
+n_mutation_types <- 2L
+n_alleles <- c(50L, 55L)
+pi_block <- c(0.98, 0.01, 0.01)
+theta <- 0.75
+phi_block <- c(0.5, 0.5)
+gamma_mat <- matrix(c(-1.0, 0.1, -0.8, 0.2), nrow = 2L, byrow = TRUE)
+delta_mat <- matrix(c(-3, 0.05, -2.75, 0.15), nrow = 2L, byrow = TRUE)
+rownames(gamma_mat) <- rownames(delta_mat) <- c("mutation_type_1", "mutation_type_2")
+colnames(gamma_mat) <- colnames(delta_mat) <- c("covariate_1", "covariate_2")
+covariate_bound <- c(-1, 1)
+rho <- 0.001
+n_covariates <- 2L
+r <- 6L
+mu_reads <- 50000L
+theta_reads <- 10
 }

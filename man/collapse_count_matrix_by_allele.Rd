@@ -7,9 +7,8 @@
 collapse_count_matrix_by_allele(
   count_matrix,
   allele_df,
-  bucket_breaks = c(0L, 1L, 2L, 3L, 4L, 5L, 7L, 9L, Inf),
-  bucket_labels = c("one", "two", "three", "four", "five", "six-seven", "eight-nine",
-    "10+")
+  bucket_breaks = c(seq(0L, 49L), Inf),
+  bucket_labels = c(seq(1L, 49L), "50+")
 )
 }
 \arguments{
@@ -32,7 +31,7 @@ data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhamps
 count_matrix <- data_list$count_matrix
 allele_df <- data_list$allele_df
 covariate_df <- data_list$covariate_df
-collapsed_matrix <- collapse_count_matrix_by_allele(count_matrix, allele_df)
-collapsed_res <- compute_basic_statistics_on_multivariate_amplicon_seq_data(collapsed_matrix, covariate_df)
+collapsed_matrix_list <- collapse_count_matrix_by_allele(count_matrix, allele_df)
+collapsed_res <- compute_basic_statistics_on_multivariate_amplicon_seq_data(collapsed_matrix_list$collapsed_matrix, covariate_df)
 
 }

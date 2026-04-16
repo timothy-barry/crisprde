@@ -49,8 +49,8 @@ compute_basic_statistics_on_multivariate_amplicon_seq_data <- function(count_mat
 #' count_matrix <- data_list$count_matrix
 #' allele_df <- data_list$allele_df
 #' covariate_df <- data_list$covariate_df
-#' collapsed_matrix <- collapse_count_matrix_by_allele(count_matrix, allele_df)
-#' collapsed_res <- compute_basic_statistics_on_multivariate_amplicon_seq_data(collapsed_matrix, covariate_df)
+#' collapsed_matrix_list <- collapse_count_matrix_by_allele(count_matrix, allele_df)
+#' collapsed_res <- compute_basic_statistics_on_multivariate_amplicon_seq_data(collapsed_matrix_list$collapsed_matrix, covariate_df)
 #'
 collapse_count_matrix_by_allele <- function(count_matrix, allele_df,
                                             bucket_breaks = c(seq(0L, 49L), Inf),
@@ -72,6 +72,7 @@ collapse_count_matrix_by_allele <- function(count_matrix, allele_df,
     dplyr::group_by(replicate_id, mutation_type, bucketed_length) |>
     dplyr::summarize(read_count = sum(x)) |>
     dplyr::ungroup() |>
+    dplyr::arrange(mutation_type, bucketed_length) |>
     dplyr::mutate(replicate_id = as.character(replicate_id), mutation_bucket = paste0(mutation_type, "_", bucketed_length))
 
   # reconstruct sparse matrix
@@ -88,8 +89,156 @@ collapse_count_matrix_by_allele <- function(count_matrix, allele_df,
   colnames(count_matrix) <- mutation_bucket_levels
 
   # append the unmutated column
-  collapsed_mat <- cbind(unmutated_count_vect, count_matrix)
+  collapsed_matrix <- cbind(unmutated_count_vect, count_matrix)
+
+  # construct the collapsed allele data frame
+  mutation_bucket_split <- strsplit(x = colnames(count_matrix), split = "_", fixed = TRUE)
+  mutation_type <- sapply(mutation_bucket_split, FUN = function(l) l[[1]])
+  mutation_length <- sapply(mutation_bucket_split, FUN = function(l) l[[2]])
+  mutation_length_int <- gsub(pattern = "+", replacement = "", x = mutation_length, fixed = TRUE) |> as.integer()
+  collapsed_allele_df <- data.frame(allele_id = mutation_bucket_levels,
+                                    mutation_type = mutation_type,
+                                    mutation_length = mutation_length_int)
+  collapsed_allele_df <- rbind(data.frame(allele_id = "unmutated", mutation_type = NA_character_, mutation_length = NA_integer_),
+                               collapsed_allele_df)
+
+  # construct output
+  ret <- list(collapsed_matrix = collapsed_matrix, collapsed_allele_df = collapsed_allele_df)
 
   # collapse the allele feature table
-  return(collapsed_mat)
+  return(ret)
+}
+
+
+#' Fit multivariate Bayesian regression model
+#'
+#' @returns
+#' @export
+#'
+#' @examples
+#' # prepare data input
+#' data_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/multivariate_count_tables/combined/CRISPResso_on_1450_OT_0000.rds")
+#' count_matrix <- data_list$count_matrix
+#' allele_df <- data_list$allele_df
+#' covariate_df <- data_list$covariate_df
+#' collapsed_matrix_list <- collapse_count_matrix_by_allele(count_matrix, allele_df)
+#' count_matrix <- collapsed_matrix_list$collapsed_matrix
+#' allele_df <- collapsed_matrix_list$collapsed_allele_df
+#' # for now -- restrict attention to deletions
+#' to_keep <- allele_df$mutation_type %in% c(NA, "deletion")
+#' count_matrix <- count_matrix[,to_keep]
+#' allele_df <- allele_df[to_keep,]
+#'
+#' # get rho from univariate analysis
+#' dat_list <- readRDS("/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/marginal_count_tables/data_list_by_grna.rds")[["1450"]]
+#' univariate_res <- run_freqentist_amplicon_seq_analysis(data_list = dat_list)
+#' rho_hat <- univariate_res$result_df |> dplyr::filter(amplicon_id == "1450_OT_0000") |> dplyr::pull(rho_hat)
+#'
+#' # formula object
+#' formula_object <- formula(~ mutation_length + 0)
+#'
+#' # hyperparameters
+#' # pi (control mean)
+#' mu_pi_block <- c(0.999, 0.001)
+#' kappa_pi_block <- 100
+#'
+#' # theta (editing rate)
+#' mu_theta <- 0.5
+#' kappa_theta <- 20
+#'
+#' # block level editing
+#' mu_phi_block <- 1
+#' kappa_phi_block <- 1
+#'
+#' # control side regression
+#' mu_gamma <- matrix(-1)
+#' sigma_gamma <- matrix(0.5)
+#'
+#' # treatment side regression
+#' mu_delta <- matrix(-1)
+#' sigma_delta <- matrix(0.5)
+#'
+#' # fit model
+#' fit <- fit_multivariate_bayesian_regression_model(count_matrix, allele_df, covariate_df, rho_hat, formula_object,
+#' mu_pi_block, kappa_pi_block,
+#' mu_theta, kappa_theta,
+#' mu_phi_block, kappa_phi_block,
+#' mu_gamma, sigma_gamma,
+#' mu_delta, sigma_delta)
+fit_multivariate_bayesian_regression_model <- function(count_matrix, allele_df, covariate_df, rho_hat, formula_object,
+                                                       mu_pi_block, kappa_pi_block,
+                                                       mu_theta, kappa_theta,
+                                                       mu_phi_block, kappa_phi_block,
+                                                       mu_gamma, sigma_gamma,
+                                                       mu_delta, sigma_delta) {
+  # construct the model matrix
+  allele_df <- allele_df |> dplyr::filter(allele_id != "unmutated")
+  X <- model.matrix(object = formula_object, data = allele_df) |> scale()
+
+  # set key model parameters
+  unique_mutation_types <- unique(allele_df$mutation_type)
+  m <- length(unique_mutation_types)
+  start_stop_info <- sapply(X = unique_mutation_types, FUN = function(curr_type) {
+    range(which(allele_df$mutation_type == curr_type))
+  }) |> t()
+  type_start <- start_stop_info[,1]
+  type_end <- start_stop_info[,2]
+  q_t <- apply(X = start_stop_info, FUN = function(r) r[2] - r[1] + 1L, MARGIN = 1L)
+  q <- nrow(X)
+  p <- ncol(X)
+  Y_trt <- count_matrix[covariate_df$replicate_id,][covariate_df$treated,,drop=FALSE]
+  Y_cntrl <- count_matrix[covariate_df$replicate_id,][!covariate_df$treated,,drop=FALSE]
+  storage.mode(Y_cntrl) <- "integer"
+  storage.mode(Y_trt) <- "integer"
+  r_trt <- nrow(Y_trt)
+  r_cntrl <- nrow(Y_cntrl)
+  rho <- rho_hat
+
+  # organize hyperparameters
+  alpha_beta_theta <- beta_mu_kappa_to_alpha_beta(mu = mu_theta, kappa = kappa_theta)
+  alpha_theta <- alpha_beta_theta[["alpha"]]
+  beta_theta <- alpha_beta_theta[["beta"]]
+
+  # initialize the model
+  stan_file <- "~/research_code/crispr_safe_parent/crisprde/inst/stan/reg_model.stan" # system.file("stan", "reg_model.stan", package = "crisprde")
+  model <- cmdstanr::cmdstan_model(stan_file)
+  stan_data <- list(
+    m = m,
+    q = q,
+    p = p,
+    r_cntrl = r_cntrl,
+    r_trt = r_trt,
+    Y_cntrl = Y_cntrl,
+    Y_trt = Y_trt,
+    rho = rho_hat,
+    q_t = q_t,
+    type_start = type_start,
+    type_end = type_end,
+    X = X,
+    mu_pi_block = mu_pi_block,
+    kappa_pi_block = kappa_pi_block,
+    alpha_theta = alpha_theta,
+    beta_theta = beta_theta,
+    mu_phi_block = mu_phi_block,
+    kappa_phi_block = kappa_phi_block,
+    mu_gamma = mu_gamma,
+    sigma_gamma = sigma_gamma,
+    mu_delta = mu_delta,
+    sigma_delta = sigma_delta
+  )
+
+  # fit model
+  fit <- model$sample(
+    data = stan_data,
+    seed = 4,
+    chains = 4,
+    parallel_chains = 4,
+    iter_warmup = 1000,
+    iter_sampling = 1000,
+    adapt_delta = 0.95,
+    max_treedepth = 12,
+    refresh = 250
+  )
+
+  return(fit)
 }

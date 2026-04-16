@@ -255,3 +255,10 @@ select_beta_hyperparameters <- function(mean, variance) {
 
   c(alpha = alpha, beta = beta)
 }
+
+
+beta_mu_kappa_to_alpha_beta <- function(mu, kappa) {
+  alpha <- mu * kappa
+  beta <- (1 - mu) * kappa
+  c(alpha = alpha, beta = beta)
+}

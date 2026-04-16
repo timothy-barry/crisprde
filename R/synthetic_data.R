@@ -58,40 +58,100 @@ generate_synthetic_amplicon_seq_data <- function(p, r, pi_cntrl, editing_rate, n
 
 #' Generate synthetic multivariate amplicon-seq data
 #'
-#' Generate synthetic, multivariate amplicon-seq data using an example allele table as input.
+#' @param n_mutation_types
+#' @param n_alleles
+#' @param n_covariates
+#' @param pi_block
+#' @param theta
+#' @param phi_block
+#' @param gamma
+#' @param delta
 #'
-#' @param allele_feature_table allele
-#' @param frac_mutated fraction of reads containing a mutation
-#' @param rho overdispersion parameter
-#' @param n_reads number of reads (fixed across replicates)
-#' @param beta_mut_length model parameter controlling the relationship between mutation length and allele frequency
-#'
-#' @returns a count table containing the data
+#' @returns
 #' @export
 #'
 #' @examples
-#' allele_table_fp <- "/Users/timbarry/research_offsite/external/bauer-lab/rhampseq_bcl11a/crispresso_output_1617/GUIDE0724-africa-edited/CRISPResso_on_1617_OT_0000/Alleles_frequency_table_around_sgRNA_CTAACAGTTGCTTTTATCAC.txt"
-#' allele_feature_table <- process_crispresso_allele_table_cas9(allele_table_fp)
-#' count_tab <- generate_synthetic_multivariate_amplicon_seq_data(allele_feature_table, n_reads = 100000L)
-generate_synthetic_multivariate_amplicon_seq_data <- function(allele_feature_table, use_observed_n_reads = FALSE, sample_size_mu = 100000L, sample_size_theta = 15L, frac_mutated = 0.8, n_rep = 3L, rho = 2e-5, beta_mut_length = -0.1) {
-  mod_tab <- allele_feature_table |> dplyr::filter(modified)
-  mutation_length <- mod_tab$mutation_length
+#' n_mutation_types <- 2L
+#' n_alleles <- c(50L, 55L)
+#' pi_block <- c(0.98, 0.01, 0.01)
+#' theta <- 0.75
+#' phi_block <- c(0.5, 0.5)
+#' gamma_mat <- matrix(c(-1.0, 0.1, -0.8, 0.2), nrow = 2L, byrow = TRUE)
+#' delta_mat <- matrix(c(-3, 0.05, -2.75, 0.15), nrow = 2L, byrow = TRUE)
+#' rownames(gamma_mat) <- rownames(delta_mat) <- c("mutation_type_1", "mutation_type_2")
+#' colnames(gamma_mat) <- colnames(delta_mat) <- c("covariate_1", "covariate_2")
+#' covariate_bound <- c(-1, 1)
+#' rho <- 0.001
+#' n_covariates <- 2L
+#' r <- 6L
+#' mu_reads <- 50000L
+#' theta_reads <- 10
+generate_synthetic_multivariate_amplicon_seq_data <- function(n_mutation_types, n_alleles, n_covariates, pi_block, theta,
+                                                              phi_block, gamma_mat, delta_mat, covariate_bound, rho,
+                                                              r) {
+  # generate the covariate matrix for the different mutation types
+  X_list <- lapply(X = seq_len(n_mutation_types), FUN = function(curr_mutation_type) {
+    X <- replicate(n = n_covariates, expr = {
+      runif(n = n_alleles[curr_mutation_type], min = covariate_bound[1], max = covariate_bound[2]) |> sort()
+    })
+    colnames(X) <- paste0("covariate_", seq_len(n_covariates))
+    rownames(X) <- paste0("type_", curr_mutation_type, "_allele_", seq_len(n_alleles[curr_mutation_type]))
+    X
+  }) |> setNames(paste0("type_", seq_len(n_mutation_types)))
 
-  # mutation model
-  exp_f <- exp(mutation_length * beta_mut_length)
-  phi <- exp_f/sum(exp_f)
-  tilde_hat <- frac_mutated * phi
+  # generate background spectrum psi and editing spectrum phi for the different mutation types
+  spectra_list <- lapply(X = seq_len(n_mutation_types), FUN = function(curr_mutation_type) {
+    # iterate over control and editing spectra
+    gamma_coefs <- gamma_mat[curr_mutation_type,]
+    delta_coefs <- delta_mat[curr_mutation_type,]
+    background_spectrum <- softmax(as.numeric(X_list[[curr_mutation_type]] %*% gamma_coefs))
+    editing_spectrum <- softmax(as.numeric(X_list[[curr_mutation_type]] %*% delta_coefs))
+    list(background_spectrum = background_spectrum, editing_spectrum = editing_spectrum)
+  }) |> setNames(paste0("type_", seq_len(n_mutation_types)))
 
-  # number of reads
-  if (use_observed_n_reads) {
-    n_reads <- sum(allele_feature_table$read_count)
-  } else {
-    n_reads <- MASS::rnegbin(n = n_rep, mu = sample_size_mu, theta = sample_size_theta)
-  }
+  # compute background mutation rate vector pi
+  pi_mod <- sapply(X = seq_len(n_mutation_types), FUN = function(curr_mutation_type) {
+    pi_block[curr_mutation_type + 1L] * spectra_list[[curr_mutation_type]]$background_spectrum
+  }) |> setNames(paste0("type_", seq_len(n_mutation_types)))
+  pi <- c(pi_block[1], unlist(setNames(pi_mod, NULL)))
 
-  # simulate reads
-  count_tab <- dirmult::simPop(J = n_rep, K = nrow(allele_feature_table), n = n_reads,
-                               pi = c(1 - frac_mutated, tilde_hat), theta = rho)$data
-  colnames(count_tab) <- c("unmutated", paste0("allele_", seq(1L, nrow(mod_tab))))
-  return(count_tab)
+  # compute treated mutation rate vector tau
+  tau_mod <- sapply(X = seq_len(n_mutation_types), FUN = function(curr_mutation_type) {
+    pi_mod[[curr_mutation_type]] + pi[1] * theta * phi_block[curr_mutation_type] * spectra_list[[curr_mutation_type]]$editing_spectrum
+  }) |> setNames(paste0("type_", seq_len(n_mutation_types)))
+  tau <- c(pi[1] * (1 - theta), unlist(setNames(tau_mod, NULL)))
+
+  # calculate the allele-specific editing rate (for the output)
+  theta_tilde <- sapply(X = seq_len(n_mutation_types), FUN = function(curr_mutation_type) {
+    theta * phi_block[curr_mutation_type] * spectra_list[[curr_mutation_type]]$editing_spectrum
+  }) |> unlist()
+
+  # control read count
+  sizes <- MASS::rnegbin(n = r, mu = mu_reads, theta = theta_reads)
+  alpha_pi <- get_alpha_from_mu_rho(pi, rho)
+  Y_cntrl <- extraDistr::rdirmnom(n = r, size = sizes, alpha = alpha_pi)
+
+  # treated read count
+  sizes <- MASS::rnegbin(n = r, mu = mu_reads, theta = theta_reads)
+  alpha_tau <- get_alpha_from_mu_rho(tau, rho)
+  Y_trt <- extraDistr::rdirmnom(n = r, size = sizes, alpha = alpha_tau)
+
+  # construct the outputs
+  Y <- rbind(Y_cntrl, Y_trt)
+  X <- do.call(what = rbind, args = X_list)
+  allele_df <- data.frame(allele_id = rownames(X),
+                          mutation_type = rep(paste0("type_", seq_len(n_mutation_types)), n_alleles),
+                          X)
+  rownames(allele_df) <- NULL
+  rep_id <- paste0("rep_", seq_len(2 * r))
+  covariate_df <- data.frame(rep_id = rep_id,
+                             treated = c(rep(TRUE, r), rep(FALSE, r)))
+  rownames(Y) <- rep_id
+  l <- list(Y = Y, X = X, allele_df = allele_df, theta_tilde = theta_tilde, pi = pi, tau = tau)
 }
+
+
+# softmax helper function
+softmax <- function(x) exp(x)/sum(exp(x))
+# DM helper function -- get alpha from mu, rho
+get_alpha_from_mu_rho <- function(mu, rho) mu * (1 - rho) / rho

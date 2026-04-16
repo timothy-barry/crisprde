@@ -14,10 +14,10 @@ data {
   // TYPE STRUCTURE FOR THE FLATTENED MUTATED-ALLELE VECTOR
   array[m] int<lower=1> q_t; // number of distinct alleles per type
   array[m] int<lower=1, upper=q> type_start; // within mutated subvector, vector of type starting positions (first entry should be 1)
-  array[m] int<lower=1, upper=q> type_stop; // within mutated subvector, vector of type ending positions (final entry should be q)
+  array[m] int<lower=1, upper=q> type_end; // within mutated subvector, vector of type ending positions (final entry should be q)
 
   // DESIGN MATRIX FOR MUTATED ALLELES
-  matrix[q, p] X; // stacked design matrix; alleles of type 1 form the first q_1 rows; alleles of type 2 form the second q_2 rows, etc. 
+  matrix[q, p] X; // stacked design matrix; alleles of type 1 form the first q_1 rows; alleles of type 2 form the second q_2 rows, etc.
 
   // PRIORS
   // BACKGROUND SPECTRUM
@@ -71,7 +71,7 @@ transformed parameters {
   // for each mutation type
   for (t in 1:m) {
     // initialize key integers and vectors
-    int edited_start; 
+    int edited_start;
     int edited_stop;
     int full_start;
     int full_stop;
@@ -87,7 +87,7 @@ transformed parameters {
     real log_phi_block_t;
 
     edited_start = type_start[t]; // get the subvector start index
-    edited_stop = type_stop[t]; // get the subvector end index
+    edited_stop = type_end[t]; // get the subvector end index
     full_start = edited_start + 1; // get start relative to full vector
     full_stop = edited_stop + 1; // get stop relative to full vector
 
@@ -115,7 +115,7 @@ transformed parameters {
 }
 
 model {
-  // initialize vectors needed for stan DM parameterization 
+  // initialize vectors needed for stan DM parameterization
   vector[q + 1] alpha_dm_cntrl;
   vector[q + 1] alpha_dm_trt;
   real eps_alpha;
@@ -152,16 +152,16 @@ generated quantities {
 
   // blocked theta tilde (i.e., overall editing rate for each mutation type; length m)
   theta_tilde_block = theta * to_vector(phi_block);
-  
+
   // allele-level theta tilde (i.e., allele-specific editing rate for each allele; length q)
   for (t in 1:m) {
     int edited_start;
     int edited_stop;
     edited_start = type_start[t];
-    edited_stop = type_stop[t];
+    edited_stop = type_end[t];
     theta_tilde[edited_start:edited_stop] = theta * phi_block[t] * phi[edited_start:edited_stop];
   }
-  
+
   // observation-wise log likelihood
   eps_alpha = 1e-12;
   alpha_dm_cntrl = kappa_lik * pi + rep_vector(eps_alpha, q + 1);
