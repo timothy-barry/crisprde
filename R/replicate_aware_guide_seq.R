@@ -178,11 +178,21 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 run_multivariate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE, multiplicity_alpha = 0.1) {
   X <- Y_mat > 0
   storage.mode(X) <- "integer"
+  Omega <- as.matrix(generate_omega(nrow(Y_mat)))
 
   # 1. fit occupancy model and compute marginal occupancy probabilities
   if (incorporate_occupancy_info) {
     pi_hat <- fit_tbp_model(X)
-    if (!is.null(pi_hat)) tbp_pattern_df <- pmf_tbp(pi_hat)
+    if (!is.null(pi_hat)) {
+      tbp_pattern_df <- pmf_tbp(pi_hat)
+      n_occupied_per_pattern <- rowSums(Omega)
+      gt_or_pattern_list <- lapply(X = seq_len(nrow(Omega)), FUN = function(i) {
+        curr_row <- Omega[i,]
+        gt_or_eq_patters <- c(i, which(n_occupied_per_pattern > sum(curr_row)))
+      })
+    } else {
+      incorporate_occupancy_info <- FALSE
+    }
   }
 
   # 2. compute shifted NB models and compute convolved pms and cdfs over all combinations
@@ -197,7 +207,6 @@ run_multivariate_guideseq_method <- function(Y_mat, incorporate_occupancy_info =
     dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
   }, simplify = FALSE)
   # compute all convolution combinations
-  Omega <- as.matrix(generate_omega(nrow(Y_mat)))
   conv_pmf_list <- apply(X = Omega, MARGIN = 1, FUN = function(curr_row) {
     convolve_pmf_list(pmf_list[as.logical(curr_row)])
   }, simplify = FALSE)
@@ -212,26 +221,34 @@ run_multivariate_guideseq_method <- function(Y_mat, incorporate_occupancy_info =
   occupancy_pattern_map <- match(col_keys, omega_keys)
 
   # 3. compute the p-value for each window
-  # occupancy + count p-value
-  if (incorporate_occupancy_info) {
-
-
-
-  } else { # count-only p-value
-    p_vals <- sapply(X = seq_len(ncol(Y_mat)), FUN = function(i) {
-      y <- Y_mat[,i]
-      occupancy_pattern_idx <- occupancy_pattern_map[i]
-      n_nonzero <- sum(X[,i])
-      test_stat <- sum(y) - n_nonzero
+  p_vals <- sapply(X = seq_len(ncol(Y_mat)), FUN = function(i) {
+    y <- Y_mat[,i]
+    occupancy_pattern_idx <- occupancy_pattern_map[i]
+    n_nonzero <- sum(X[,i])
+    test_stat <- sum(y) - n_nonzero
+    if (!incorporate_occupancy_info) {
       right_tail_prob_vector <- right_tail_prob_list[[occupancy_pattern_idx]]
-      idx <- test_stat + 1L
-      if (idx > length(right_tail_prob_vector)) {
-        p_val <- right_tail_prob_vector[length(right_tail_prob_vector)]
-      } else {
-        p_val <- right_tail_prob_vector[idx]
-      }
-      return(p_val)
-    })
-  }
+      p_val <- get_p_value_given_test_stat_prob_vector(test_stat, right_tail_prob_vector)
+    } else {
+      vectors_gt_observed_vector <- gt_or_pattern_list[[occupancy_pattern_idx]]
+      p_val <- sapply(X = vectors_gt_observed_vector, FUN = function(k) {
+        right_tail_prob_vector <- right_tail_prob_list[[k]]
+        p_t_given_x <- get_p_value_given_test_stat_prob_vector(test_stat, right_tail_prob_vector)
+        p_x <- tbp_pattern_df$pmf[k]
+        p_t_given_x * p_x
+      }) |> sum()
+    }
+  })
   return(p_vals)
+}
+
+
+get_p_value_given_test_stat_prob_vector <- function(test_stat, right_tail_prob_vector) {
+  idx <- test_stat + 1L
+  if (idx > length(right_tail_prob_vector)) {
+    p_val <- right_tail_prob_vector[length(right_tail_prob_vector)]
+  } else {
+    p_val <- right_tail_prob_vector[idx]
+  }
+  return(p_val)
 }
