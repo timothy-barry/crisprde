@@ -26,11 +26,12 @@ null_dat <- simulate_multirep_guideseq_data(pi, mu_vect, theta_vect, m)
 
 # ALTERNATIVE DATA
 pi <- c(0.5, 0.6, 0.4)
-mu_vect <- c(80, 10, 30)
+mu_vect <- c(80, 200, 50)
 theta_vect <- c(20, 21, 15)
 m <- 15
 alt_dat <- simulate_multirep_guideseq_data(pi, mu_vect, theta_vect, m)
 
 # COMBINED DATA
-full_dat <- list(X = cbind(alt_dat$X, null_dat$X), Y = cbind( alt_dat$Y, null_dat$Y))
+Y_mat <- cbind(alt_dat, null_dat)
+colnames(Y_mat) <- paste0("window_", seq_len(ncol(Y_mat)))
 }

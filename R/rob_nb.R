@@ -125,22 +125,3 @@ fit_nb_univariate <- function(y) {
   gamma_hat <- mu_hat/l
   c(mu = mu_hat, gamma = gamma_hat, theta = fit$theta, l = l)
 }
-
-###############
-# ZERO-INFLATED
-###############
-fit_rob_zinf_nb_univariate <- function(y, c.tukey.beta = 10, c.tukey.sigma = 10, maxit = 100, tol = 1e-6) {
-  n <- length(y)
-  is_0 <- y == 0
-  one_vect <- rep(1, n)
-
-  # pilot estimate: fit hurdle model and back-calculate pi
-  fit_hurdle <- pscl::hurdle(formula = y ~ 1, dist = "negbin")
-  mu_pilot <- exp(fit_hurdle$coefficients$count[[1]])
-  theta_pilot <- fit_hurdle$theta[[1]]
-  p_nb_zero <- dnbinom(x = 0, size = theta_pilot, mu = mu_pilot)
-  n_nonzero <- sum(y != 0)
-  n_nb <- n_nonzero/(1 - p_nb_zero)
-  n_zero_component <- n - n_nb
-  pi_hat <- n_zero_component/n
-}
