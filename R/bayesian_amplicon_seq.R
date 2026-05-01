@@ -44,6 +44,7 @@ run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 
   n_mat_cntrl <- data_list$n_mat_cntrl
   k_mat_trt <- data_list$k_mat_trt
   k_mat_cntrl <- data_list$k_mat_cntrl
+  amplicon_ids <- if (!is.null(data_list$amplicon_ids)) data_list$amplicon_ids else colnames(n_mat_trt)
 
   # 2. compute pi tilde, or the Jeffrey-regularized pi estimator (for dispersion estimation)
   estimate_reg_pi_per_amplicon <- function(n_mat, k_mat) (colSums(k_mat) + 0.5)/(colSums(n_mat) + 1)
@@ -65,7 +66,7 @@ run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 
 
   # 4. run the Bayesian estimation procedure for each amplicon
   amplicon_wise_res_list <- lapply(X = seq_len(ncol(n_mat_trt)), FUN = function(j) {
-    if (print_progress) print(paste0("Running analysis on amplicon ", data_list$amplicon_ids[j]))
+    if (print_progress) print(paste0("Running analysis on amplicon ", amplicon_ids[j]))
     res <- compute_bayesian_estimate_for_amplicon(n_trt = n_mat_trt[,j],
                                                   n_cntrl = n_mat_cntrl[,j],
                                                   k_trt = k_mat_trt[,j],
@@ -91,7 +92,7 @@ run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 
     l[["pi_density_df"]] |> dplyr::mutate(amplicon_id = l[["amplicon_id"]])
   }) |> data.table::rbindlist()
 
-  result_df <- data.frame(amplicon_id = data_list$amplicon_ids,
+  result_df <- data.frame(amplicon_id = amplicon_ids,
                           rho_hat = rho_tilde_per_amplicon,
                           pilot_rho_hat = dispersion_output$pilot_rho_tilde_per_amplicon,
                           dispersion_outlier = dispersion_output$dispersion_outlier,
@@ -99,6 +100,7 @@ run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 
                           theta_lower_ci = theta_lower_ci,
                           theta_upper_ci = theta_upper_ci,
                           theta_one_sided_upper_cl = theta_one_sided_upper_cl)
+  rownames(amplicon_ids)
   ret <- list(result_df = result_df,
               dispersion_diagnostics = dispersion_output$dispersion_diagnostics[-1],
               theta_posterior_density_df = theta_posterior_density_df,

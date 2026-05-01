@@ -151,11 +151,11 @@ generate_synthetic_multivariate_amplicon_seq_data <- function(n_mutation_types, 
                                            mutation_type = NA_character_), allele_df)
   rownames(allele_df) <- NULL
   rep_id <- paste0("rep_", seq_len(2 * r))
-  covariate_df <- data.frame(rep_id = rep_id,
+  covariate_df <- data.frame(replicate_id = rep_id,
                              treated = c(rep(FALSE, r), rep(TRUE, r)))
   rownames(Y) <- rep_id
-  colnames(Y) <- c("unmutated", allele_df$allele_id)
-  l <- list(Y = Y, X = X, allele_df = allele_df, covariate_df = covariate_df, theta_tilde = theta_tilde, pi = pi, tau = tau)
+  colnames(Y) <- allele_df$allele_id
+  l <- list(count_matrix = Y, X = X, allele_df = allele_df, covariate_df = covariate_df, theta_tilde = theta_tilde, pi = pi, tau = tau)
   return(l)
 }
 
