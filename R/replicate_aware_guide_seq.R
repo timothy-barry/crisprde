@@ -158,6 +158,7 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 #'
 #' @returns a data frame containing a p-value for each window
 #' @examples
+#' set.seed(42)
 #' # NULL DATA
 #' pi <- c(0.05, 0.1, 0.02)
 #' mu_vect <- c(10, 6, 15)
@@ -169,13 +170,23 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 #' pi <- c(0.5, 0.6, 0.4)
 #' mu_vect <- c(80, 200, 50)
 #' theta_vect <- c(20, 21, 15)
-#' m <- 15
-#' alt_dat <- simulate_multirep_guideseq_data(pi, mu_vect, theta_vect, m)
+#' m_alt <- 15
+#' alt_dat <- simulate_multirep_guideseq_data(pi, mu_vect, theta_vect, m_alt)
 #'
 #' # COMBINED DATA
 #' Y_mat <- cbind(alt_dat, null_dat)
+#' colnames(Y_mat) <- paste0("window_", seq_len(ncol(Y_mat)))
 #' incorporate_occupancy_info <- TRUE
-run_multivariate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE, multiplicity_alpha = 0.1) {
+#' multiplicity_alpha <- 0.2
+#'
+#' # RUN METHOD
+#' res_df <- run_multireplicate_guideseq_method(Y_mat, incorporate_occupancy_info = TRUE)
+#'
+#' # EVALUATE RESULT
+#' n_correct_nominations <- sum(res_df$nominated_off_target[seq(1, m_alt)])
+#' n_total_nominations <- sum(res_df$nominated_off_target)
+#' fdp <- (n_total_nominations - n_correct_nominations)/n_total_nominations
+run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE, multiplicity_alpha = 0.2, lambda = NULL) {
   X <- Y_mat > 0
   storage.mode(X) <- "integer"
   Omega <- as.matrix(generate_omega(nrow(Y_mat)))
@@ -184,15 +195,22 @@ run_multivariate_guideseq_method <- function(Y_mat, incorporate_occupancy_info =
   if (incorporate_occupancy_info) {
     pi_hat <- fit_tbp_model(X)
     if (!is.null(pi_hat)) {
+      # get pmf of fitted tbp distribution
       tbp_pattern_df <- pmf_tbp(pi_hat)
-      n_occupied_per_pattern <- rowSums(Omega)
-      gt_or_pattern_list <- lapply(X = seq_len(nrow(Omega)), FUN = function(i) {
-        curr_row <- Omega[i,]
-        gt_or_eq_patters <- c(i, which(n_occupied_per_pattern > sum(curr_row)))
-      })
+      k_tilde <- rowSums(Omega)
+      if (is.null(lambda)) {
+        lambda <- -median(colSums(Y_mat) - colSums(X))/(sum(log(pi_hat)))
+      }
     } else {
       incorporate_occupancy_info <- FALSE
     }
+  }
+
+  if (!incorporate_occupancy_info) {
+    omega_keys <- apply(Omega, 1, paste0, collapse = "")
+    col_keys <- apply(X, 2, paste0, collapse = "")
+    occupancy_pattern_map <- match(col_keys, omega_keys)
+    lambda <- NA
   }
 
   # 2. compute shifted NB models and compute convolved pms and cdfs over all combinations
@@ -215,40 +233,50 @@ run_multivariate_guideseq_method <- function(Y_mat, incorporate_occupancy_info =
     rev(cumsum(rev(curr_pmf)))
   })
 
-  # 3. match occupancy pattern to Omega
-  omega_keys <- apply(Omega, 1, paste0, collapse = "")
-  col_keys <- apply(X, 2, paste0, collapse = "")
-  occupancy_pattern_map <- match(col_keys, omega_keys)
-
   # 3. compute the p-value for each window
-  p_vals <- sapply(X = seq_len(ncol(Y_mat)), FUN = function(i) {
-    y <- Y_mat[,i]
-    occupancy_pattern_idx <- occupancy_pattern_map[i]
-    n_nonzero <- sum(X[,i])
-    test_stat <- sum(y) - n_nonzero
+  p_vals <- sapply(X = seq_len(ncol(Y_mat)), FUN = function(j) {
+    y <- Y_mat[,j]
+    total_umi_count <- sum(y)
     if (!incorporate_occupancy_info) {
+      occupancy_pattern_idx <- occupancy_pattern_map[j]
+      test_stat <- total_umi_count - sum(X[,j])
       right_tail_prob_vector <- right_tail_prob_list[[occupancy_pattern_idx]]
       p_val <- get_p_value_given_test_stat_prob_vector(test_stat, right_tail_prob_vector)
     } else {
-      vectors_gt_observed_vector <- gt_or_pattern_list[[occupancy_pattern_idx]]
-      p_val <- sapply(X = vectors_gt_observed_vector, FUN = function(k) {
-        right_tail_prob_vector <- right_tail_prob_list[[k]]
-        p_t_given_x <- get_p_value_given_test_stat_prob_vector(test_stat, right_tail_prob_vector)
-        p_x <- tbp_pattern_df$pmf[k]
-        p_t_given_x * p_x
+      # compute test stat
+      s_obs <- (total_umi_count - sum(X[,j])) - lambda * sum(X[,j] * log(pi_hat))
+      p_val <- sapply(X = seq_len(nrow(tbp_pattern_df)), FUN = function(i) {
+        curr_pmf <- right_tail_prob_list[[i]]
+        sum_start <- ceiling(s_obs + lambda * sum(Omega[i,] * log(pi_hat)))
+        nb_piece <- get_p_value_given_test_stat_prob_vector(test_stat = sum_start,
+                                                            right_tail_prob_vector = curr_pmf)
+        tbp_piece <- tbp_pattern_df$pmf[i]
+        return(tbp_piece * nb_piece)
       }) |> sum()
     }
+    return(p_val)
   })
-  return(p_vals)
+
+  # 4. multiplicity correction
+  q_vals <- p.adjust(p = p_vals, method = "BH")
+  nominated_off_target <- (q_vals < multiplicity_alpha)
+  ret <- data.frame(window = colnames(Y_mat), p_value = p_vals,
+                    nominated_off_target = nominated_off_target,
+                    lambda = lambda)
+  return(ret)
 }
 
 
 get_p_value_given_test_stat_prob_vector <- function(test_stat, right_tail_prob_vector) {
-  idx <- test_stat + 1L
-  if (idx > length(right_tail_prob_vector)) {
-    p_val <- right_tail_prob_vector[length(right_tail_prob_vector)]
+  if (test_stat < 0) {
+    p_val <- 1
   } else {
-    p_val <- right_tail_prob_vector[idx]
+    idx <- test_stat + 1L
+    if (idx > length(right_tail_prob_vector)) {
+      p_val <- right_tail_prob_vector[length(right_tail_prob_vector)]
+    } else {
+      p_val <- right_tail_prob_vector[idx]
+    }
   }
   return(p_val)
 }
