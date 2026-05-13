@@ -26,3 +26,11 @@ Add colummns:
 \item \code{homology_gRNA} (aligned spacer sequence)
 }
 }
+\examples{
+homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
+count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2, chr != "chrM")
+clustered_count_df <- count_df_all |> dplyr::filter(treated) |> cluster_loci()
+res_df <- clustered_count_df |> construct_replicate_count_table() |> run_multireplicate_guideseq_method()
+}
