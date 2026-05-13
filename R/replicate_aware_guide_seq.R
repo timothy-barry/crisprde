@@ -183,10 +183,13 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 #' res_df <- run_multireplicate_guideseq_method(Y_mat, incorporate_occupancy_info = TRUE)
 #'
 #' # EVALUATE RESULT
-#' n_correct_nominations <- sum(res_df$nominated_off_target[seq(1, m_alt)])
-#' n_total_nominations <- sum(res_df$nominated_off_target)
+#' n_correct_nominations <- sum(res_df$nominated_window[seq(1, m_alt)])
+#' n_total_nominations <- sum(res_df$nominated_window)
 #' fdp <- (n_total_nominations - n_correct_nominations)/n_total_nominations
-run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE, multiplicity_alpha = 0.2, lambda = NULL) {
+run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE,
+                                               multiplicity_alpha = 0.2, lambda = NULL, c_tukey_beta = 5,
+                                               c_tukey_sigma = 5, robust_fit = TRUE) {
+  if (is.null(colnames(Y_mat))) warning("Y_mat must have column names (to identify the windows).")
   X <- Y_mat > 0
   storage.mode(X) <- "integer"
   Omega <- as.matrix(generate_omega(nrow(Y_mat)))
@@ -197,18 +200,17 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
     if (!is.null(pi_hat)) {
       # get pmf of fitted tbp distribution
       tbp_pattern_df <- pmf_tbp(pi_hat)
-      k_tilde <- rowSums(Omega)
       if (is.null(lambda)) {
         lambda <- -median(colSums(Y_mat) - colSums(X))/(sum(log(pi_hat)))
       }
     } else {
+      warning("Cannot fit occupancy model; defaulting to count-only model.")
       incorporate_occupancy_info <- FALSE
     }
   }
-
+  col_keys <- apply(X, 2, paste0, collapse = "")
   if (!incorporate_occupancy_info) {
     omega_keys <- apply(Omega, 1, paste0, collapse = "")
-    col_keys <- apply(X, 2, paste0, collapse = "")
     occupancy_pattern_map <- match(col_keys, omega_keys)
     lambda <- NA
   }
@@ -216,7 +218,11 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
   # 2. compute shifted NB models and compute convolved pms and cdfs over all combinations
   mu_theta_hat_mat <- apply(X = Y_mat, MARGIN = 1, FUN = function(curr_row) {
     y_plus <- curr_row[curr_row > 0]
-    fit <- fit_rob_nb_univariate(y = y_plus - 1)
+    if (robust_fit) {
+      fit <- fit_rob_nb_univariate(y = y_plus - 1, c.tukey.beta = c_tukey_beta, c.tukey.sigma = c_tukey_sigma)
+    } else {
+      fit <- fit_nb_univariate(y = y_plus - 1)
+    }
     fit[c("mu", "theta")]
   }) |> t()
   # generate pmfs
@@ -234,7 +240,7 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
   })
 
   # 3. compute the p-value for each window
-  p_vals <- sapply(X = seq_len(ncol(Y_mat)), FUN = function(j) {
+  p_val_and_test_stat_mat <- sapply(X = seq_len(ncol(Y_mat)), FUN = function(j) {
     y <- Y_mat[,j]
     total_umi_count <- sum(y)
     if (!incorporate_occupancy_info) {
@@ -244,25 +250,37 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
       p_val <- get_p_value_given_test_stat_prob_vector(test_stat, right_tail_prob_vector)
     } else {
       # compute test stat
-      s_obs <- (total_umi_count - sum(X[,j])) - lambda * sum(X[,j] * log(pi_hat))
+      test_stat <- (total_umi_count - sum(X[,j])) - lambda * sum(X[,j] * log(pi_hat))
       p_val <- sapply(X = seq_len(nrow(tbp_pattern_df)), FUN = function(i) {
         curr_pmf <- right_tail_prob_list[[i]]
-        sum_start <- ceiling(s_obs + lambda * sum(Omega[i,] * log(pi_hat)))
+        sum_start <- ceiling(test_stat + lambda * sum(Omega[i,] * log(pi_hat)))
         nb_piece <- get_p_value_given_test_stat_prob_vector(test_stat = sum_start,
                                                             right_tail_prob_vector = curr_pmf)
         tbp_piece <- tbp_pattern_df$pmf[i]
         return(tbp_piece * nb_piece)
       }) |> sum()
     }
-    return(p_val)
-  })
+    return(c(test_stat, p_val))
+  }) |> t()
 
   # 4. multiplicity correction
+  test_stats <- p_val_and_test_stat_mat[,1]
+  p_vals <- pmin(1, p_val_and_test_stat_mat[,2])
   q_vals <- p.adjust(p = p_vals, method = "BH")
-  nominated_off_target <- (q_vals < multiplicity_alpha)
-  ret <- data.frame(window = colnames(Y_mat), p_value = p_vals,
-                    nominated_off_target = nominated_off_target,
-                    lambda = lambda)
+  umi_counts <- colSums(Y_mat)
+  nominated_window <- (q_vals < multiplicity_alpha)
+
+  res_df <- data.frame(window = colnames(Y_mat),
+                       p_value = p_vals,
+                       test_stat = test_stats,
+                       nominated_window = nominated_window,
+                       umi_count = umi_counts,
+                       lambda = lambda,
+                       occupancy_pattern = col_keys) |> dplyr::arrange(p_value)
+  rownames(res_df) <- NULL
+  ests_list <- list(mu_theta_hat_mat = mu_theta_hat_mat)
+  if (incorporate_occupancy_info) ests_list$pi_hat <- pi_hat
+  ret <- list(res_df = res_df, ests_list = ests_list)
   return(ret)
 }
 
@@ -280,3 +298,255 @@ get_p_value_given_test_stat_prob_vector <- function(test_stat, right_tail_prob_v
   }
   return(p_val)
 }
+
+
+# clustering loci; computing distances between occupied loci
+compute_distances_between_occupied_loci <- function(count_df, thresh = 20) {
+  # 1. simple distance
+  count_df_w_dist <- count_df |>
+    dplyr::group_by(chr) |>
+    dplyr::arrange(chr, coord) |>
+    dplyr::mutate(simple_dist = c(NA, diff(coord)))
+  curr_group_id <- 0L
+  ds <- count_df_w_dist$simple_dist
+  group_id <- integer(length = nrow(count_df))
+  for (i in seq(1, nrow(count_df))) {
+    if (ds[i] > thresh || is.na(ds[i])) {
+      curr_group_id <- curr_group_id + 1
+    }
+    group_id[i] <- curr_group_id
+  }
+  count_df_w_dist <- count_df_w_dist |>
+    dplyr::ungroup() |> dplyr::mutate(group_id = group_id)
+  return(count_df_w_dist)
+}
+
+
+#' Construct replicate count table
+#'
+#' Takes the output from the GUIDE-seq pipeline as input; outputs a count matrix for statistical modeling
+#'
+#' @param count_df a data frame with columns `chr`, `coord`, `strand`, `replicate_id`, and `umi_count`.
+#' @param thresh clustering threshold; bases within this distance are clustered together into a window
+#' @param padding amount of padding to add to either end of each window
+#'
+#' @returns an integer matrix with replicates in the rows and windows in the columns. An entry of the matrix indicates the number of UMIs observed within a given window and replicate.
+#' @export
+#'
+#' @examples
+#' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
+#' count_df_trt <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+#'  dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id %in% 1:2) |>
+#'  dplyr::filter(chr != "chrM")
+#' Y_mat <- construct_replicate_count_table(count_df_trt)
+#' res <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10)
+construct_replicate_count_table <- function(count_df, thresh = 100L, padding = 25L) {
+  # if primer_type is present, append that to rep-id
+  if ("primer_type" %in% colnames(count_df)) count_df <- count_df |> dplyr::mutate(replicate_id = paste0(replicate_id, "-", primer_type))
+  # cluster bases into windows across replicates
+  count_df_with_group_id <- compute_distances_between_occupied_loci(count_df, thresh = thresh) |>
+    dplyr::group_by(group_id, replicate_id) |>
+    dplyr::summarize(chr = chr[1],
+                     min_coord = coord[1] - padding,
+                     max_coord = coord[length(coord)] + padding,
+                     umi_count = sum(umi_count),
+                     total_read_count = sum(total_read_count),
+                     replicate_id = replicate_id[1],
+                     on_target = on_target[1]) |>
+    dplyr::ungroup() |>
+    dplyr::arrange(replicate_id, group_id)
+  # construct Y_mat
+  replicate_idx <- match(x = count_df_with_group_id$replicate_id, unique(count_df_with_group_id$replicate_id))
+  Y_mat <- Matrix::sparseMatrix(i = replicate_idx,
+                                j = count_df_with_group_id$group_id,
+                                x = count_df_with_group_id$umi_count) |>
+    as.matrix()
+  window_ids <- count_df_with_group_id |>
+    dplyr::group_by(group_id) |>
+    dplyr::summarize(window_id = paste0(chr[1], ":", min(min_coord), "-", max(max_coord))) |>
+    dplyr::ungroup() |> dplyr::arrange(group_id) |> dplyr::pull(window_id)
+  colnames(Y_mat) <- window_ids
+  rownames(Y_mat) <- unique(count_df_with_group_id$replicate_id)
+  # apply method
+  return(Y_mat)
+}
+
+
+#' Tune hyperparameters
+#'
+#' @param Y_mat_trt
+#' @param Y_mat_cntrl
+#' @param c_grid
+#' @param lambda_grid
+#' @param multiplicity_alpha
+#' @param max_false_discs
+#'
+#' @returns
+#' @export
+#'
+#' @examples
+#' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
+#' count_tables_dir <- paste0(elane_dir, "count_tables/")
+#' combined_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds"))
+#' condition_vector <- c("trt", "cntrl")
+#' Y_mat_trt <- combined_count_df |>
+#'  dplyr::filter(treated, cas9_variant == "hifi_cas9", chr != "chrM") |>
+#'  construct_replicate_count_table()
+#' Y_mat_cntrl <- combined_count_df |>
+#'  dplyr::filter(!treated, cas9_variant == "hifi_cas9", chr != "chrM") |>
+#'  construct_replicate_count_table()
+#' out <- tune_hyperparameters(Y_mat_trt, Y_mat_cntrl)
+tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25, 50, 100),
+                                 lambda_grid = c(0, 5, 10, 20, 50, 100, 500), multiplicity_alpha = 0.2, max_false_discs = 1L) {
+  condition_grid <- c("trt", "cntrl")
+  grid <- expand.grid(c = c_grid, lambda = lambda_grid, condition = condition_grid)
+
+  # helper function to run method on one parameter configuration
+  run_one_grid_row <- function(i) {
+    curr_row <- grid[i, , drop = FALSE]
+    curr_condition <- as.character(curr_row$condition)
+    curr_c <- curr_row$c
+    curr_lambda <- curr_row$lambda
+    curr_Y_mat <- if (curr_condition == "trt") Y_mat_trt else Y_mat_cntrl
+
+    fit_res <- run_multireplicate_guideseq_method(Y_mat = curr_Y_mat, incorporate_occupancy_info = TRUE, robust_fit = TRUE,
+                                                  lambda = curr_lambda, c_tukey_beta = curr_c, c_tukey_sigma = curr_c,
+                                                  multiplicity_alpha = multiplicity_alpha)
+    list(params = curr_row, res = fit_res)
+  }
+  mc_cores <- max(1L, parallel::detectCores() - 1L)
+
+  # apply method to analyze data
+  grid_results <- parallel::mclapply(
+    X = seq_len(nrow(grid)),
+    FUN = run_one_grid_row,
+    mc.cores = mc_cores
+  )
+
+  summary_df <- lapply(X = grid_results, FUN = function(curr_res) {
+    curr_res$params |>
+      dplyr::mutate(n_discoveries = sum(curr_res$res$res_df$nominated_window))
+  }) |> data.table::rbindlist() |>
+    tidyr::pivot_wider(names_from = "condition", values_from = n_discoveries)
+  if (any(summary_df$cntrl <= max_false_discs)) {
+    selected_params <- summary_df |>
+      dplyr::filter(cntrl <= max_false_discs) |>
+      dplyr::arrange(dplyr::desc(trt), lambda, c) |>
+      dplyr::slice(1)
+    trt_idx <- sapply(grid_results, FUN = function(curr_res) {
+      curr_res$params$c == selected_params$c && curr_res$params$lambda == selected_params$lambda && curr_res$params$condition == "trt"
+    }) |> which()
+    cntrl_idx <- sapply(grid_results, FUN = function(curr_res) {
+      curr_res$params$c == selected_params$c && curr_res$params$lambda == selected_params$lambda && curr_res$params$condition == "cntrl"
+    }) |> which()
+    selected_trt_run <- grid_results[[trt_idx]]$res
+    selected_cntrl_run <- grid_results[[cntrl_idx]]$res
+  } else {
+    selected_params <- NA
+    selected_trt_run <- NA
+    selected_cntrl_run <- NA
+  }
+  ret <- list(selected_params = selected_params, selected_trt_run = selected_trt_run,
+              selected_cntrl_run = selected_cntrl_run, grid_results = grid_results, summary_df = summary_df)
+  return(ret)
+}
+
+
+#' Load CRISPRitz output
+#'
+#' @param targets_file_path file path to the targets.txt file outputted by CRISPRitz
+#'
+#' @returns a data frame containing the CRISPRitz target output
+#' @export
+#'
+#' @examples
+#' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+load_crispritz_output <- function(targets_file_path) {
+  df <- readr::read_delim(file = targets_file_path) |>
+    dplyr::rename("bulge_type" = "#Bulge type", "n_mismatches" = "Mismatches",
+                  "n_bulges" = "Bulge Size", "n_total_changes" = "Total",
+                  "gRNA" = "crRNA", "dna" = "DNA", "chromosome" = "Chromosome",
+                  "posit" = "Position", "cluster_posit" = "Cluster Position",
+                  "strand" = "Direction")
+  dna_width <- nchar(gsub(pattern = "-", replacement = "", x = df$dna))
+  df$dna_width <- dna_width
+  return(df)
+}
+
+
+#' Overlap homology and result df
+#'
+#' @param result_df output of run_multireplicate_guideseq_method
+#' @param homology_df a homology data frame (for instance, output of load_crispritz_output)
+#'
+#' @returns an augmented version of `result_df` with homology information appended
+#' @export
+overlap_homology_and_result_dfs <- function(result_df, homology_df) {
+  window_parts <- stringr::str_match(result_df$window, "^([^:]+):(\\d+)-(\\d+)$")
+
+  # initialize granges object for result
+  result_gr <- GenomicRanges::GRanges(
+    seqnames = window_parts[, 2],
+    ranges = IRanges::IRanges(
+      start = as.integer(window_parts[, 3]),
+      end = as.integer(window_parts[, 4])
+    )
+  )
+  S4Vectors::mcols(result_gr) <- result_df
+
+  # initialze granges object for homology df
+  homology_gr <- GenomicRanges::GRanges(
+    seqnames = homology_df$chromosome,
+    ranges = IRanges::IRanges(
+      start = homology_df$posit + 1L,
+      width = homology_df$dna_width
+    ),
+    strand = homology_df$strand
+  )
+  S4Vectors::mcols(homology_gr) <- homology_df
+
+  # find overlaps
+  hits <- GenomicRanges::findOverlaps(
+    query = result_gr,
+    subject = homology_gr,
+    ignore.strand = TRUE
+  )
+
+  # add columns to the result df related to homology
+  result_df_new <- result_df |>
+    dplyr::mutate(has_homology_hit = FALSE, homology_n_mismatches = NA_real_,
+                  homology_n_bulges = NA_real_, homology_posit = NA_real_,
+                  homology_strand = NA_character_, homology_dna = NA_character_,
+                  homology_gRNA = NA_character_)
+
+  # create hit df, which records all the hits, alongside n_total_changes,
+  if (length(hits) > 0L) {
+    hit_df <- data.frame(
+      result_idx = S4Vectors::queryHits(hits),
+      homology_idx = S4Vectors::subjectHits(hits)) |>
+      dplyr::mutate(
+        alignment_score = homology_df$n_mismatches[homology_idx] + 2 * homology_df$n_bulges[homology_idx]
+      )
+
+    n_hits <- tabulate(hit_df$result_idx, nbins = nrow(result_df_new))
+    result_df_new$has_homology_hit <- n_hits > 0L
+
+    best_hit_df <- hit_df |>
+      dplyr::arrange(result_idx, alignment_score, homology_idx) |>
+      dplyr::group_by(result_idx) |>
+      dplyr::slice(1L) |>
+      dplyr::ungroup()
+
+    result_idx <- best_hit_df$result_idx
+    homology_idx <- best_hit_df$homology_idx
+    result_df_new$homology_n_mismatches[result_idx] <- homology_df$n_mismatches[homology_idx]
+    result_df_new$homology_n_bulges[result_idx] <- homology_df$n_bulges[homology_idx]
+    result_df_new$homology_posit[result_idx] <- homology_df$posit[homology_idx]
+    result_df_new$homology_strand[result_idx] <- homology_df$strand[homology_idx]
+    result_df_new$homology_dna[result_idx] <- homology_df$dna[homology_idx]
+    result_df_new$homology_gRNA[result_idx] <- homology_df$gRNA[homology_idx]
+  }
+
+  return(result_df_new)
+}
+

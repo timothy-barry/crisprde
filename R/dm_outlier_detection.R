@@ -184,37 +184,4 @@ combine_p_values_simes <- function(ps, alpha = 0.1) {
   min(n * sorted_ps/seq(1, n))
 }
 
-# clustering loci; computing distances between occupied loci
-compute_distances_between_occupied_loci <- function(count_df, thresh = 20) {
-  # 1. simple distance
-  count_df_w_dist <- count_df |>
-    dplyr::group_by(chr) |>
-    dplyr::mutate(simple_dist = c(NA, diff(coord)))
-  curr_group_id <- 0L
-  ds <- count_df_w_dist$simple_dist
-  group_id <- integer(length = nrow(count_df))
-  for (i in seq(1, nrow(count_df))) {
-    if (ds[i] > thresh || is.na(ds[i])) {
-      curr_group_id <- curr_group_id + 1
-    }
-    group_id[i] <- curr_group_id
-  }
-  count_df_w_dist <- count_df_w_dist |>
-    dplyr::ungroup() |> dplyr::mutate(group_id = group_id)
 
-  # 2. min distance
-  #ds <- lapply(X = unique(count_df$chr), FUN = function(curr_chr) {
-  #  coords <- count_df |> dplyr::filter(chr == curr_chr) |> dplyr::pull(coord)
-  #  if (length(coords) == 1) {
-  #    1e7
-  #  } else {
-  #    dif_v <- diff(coords)
-  #    first_d <- dif_v[1]
-  #    last_d <- dif_v[length(dif_v)]
-  #    middle_d <- pmin(dif_v[seq(1, length(dif_v) - 1)], dif_v[seq(2, length(dif_v))])
-  #    c(first_d, middle_d, last_d)
-  #  }
-  #}) |> unlist()
-  #count_df_w_dist$min_dist <- ds
-  return(count_df_w_dist)
-}

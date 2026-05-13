@@ -32,9 +32,12 @@
 #' res_df$true_editing <- c(rep(TRUE, m_alt), rep(FALSE, m))
 #' p_all <- make_guideseq_qq_plot(res_df, color_ground_truth = TRUE)
 #' p_null <- make_guideseq_qq_plot(res_df[seq(m_alt+1, nrow(res_df)),], color_ground_truth = FALSE)
-make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE) {
+make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_trans = TRUE, min_p = 1e-16) {
+  if (!is.na(min_p)) {
+    res_df <- res_df |> dplyr::mutate(p_value = ifelse(p_value < min_p, min_p, p_value))
+  }
   rejected_p_vals <- res_df |>
-    dplyr::filter(nominated_off_target) |>
+    dplyr::filter(nominated_window) |>
     dplyr::pull(p_value)
   rejection_threshold <- if (length(rejected_p_vals) == 0L) NULL else max(rejected_p_vals)
 
@@ -46,20 +49,55 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE) {
   }
   p <- ggplot2::ggplot(data = res_df, mapping = mapping) +
     stat_qq_band() +
-    ggplot2::scale_x_continuous(trans = revlog_trans(base = 10)) +
-    ggplot2::scale_y_continuous(trans = revlog_trans(base = 10)) +
     ggplot2::theme_bw() +
     ggplot2::labs(x = "Expected null p-value", y = "Observed p-value") +
     ggplot2::geom_abline(col = "black") +
     ggplot2::geom_hline(yintercept = rejection_threshold, col = "blue", linetype = "dashed")
+  if (rev_log_trans) {
+    p <- p + ggplot2::scale_x_continuous(trans = revlog_trans(base = 10)) +
+      ggplot2::scale_y_continuous(trans = revlog_trans(base = 10), limits = c(1, min_p))
+  } else {
+   p <- p + ggplot2::scale_x_continuous(trans = scales::reverse_trans()) +
+     ggplot2::scale_y_continuous(trans = scales::reverse_trans(), limits = c(1, min_p))
+  }
   if (color_ground_truth) {
-    p <- p + stat_qq_points(ymin = 1e-8) +
+    p <- p + stat_qq_points(ymin = min_p) +
       ggplot2::scale_color_manual(values = c("firebrick1", "black")) +
       ggplot2::labs(color = "Ground truth") +
       ggplot2::scale_size_manual(values = c("Truly edited" = 1.5, "Truly unedited" = 0.5)) +
       ggplot2::guides(size = "none")
   } else {
-    p <- p + stat_qq_points(ymin = 1e-8, size = 0.5)
+    p <- p + stat_qq_points(size = 0.5, ymin = min_p)
   }
   return(p)
+}
+
+
+make_dunn_smyth_qq_plot <- function(y, fit, seed = 1) {
+  set.seed(seed)
+  y <- y - 1L
+  mu <- unname(fit[["mu"]])
+  theta <- unname(fit[["theta"]])
+
+  p_lo <- ifelse(y <= 0, 0, pnbinom(q = y - 1L, mu = mu, size = theta))
+  p_hi <- pnbinom(q = y, mu = mu, size = theta)
+  u <- stats::runif(length(y), min = p_lo, max = p_hi)
+  resid <- stats::qnorm(u)
+  ord <- order(resid)
+
+  qq_df <- tibble::tibble(
+    theoretical = stats::qnorm(stats::ppoints(length(resid))),
+    sample = resid[ord],
+  )
+
+  p <- ggplot2::ggplot(qq_df, ggplot2::aes(x = theoretical, y = sample)) +
+    ggplot2::geom_point() +
+    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "firebrick") +
+    ggplot2::xlab("Theoretical normal quantiles") +
+    ggplot2::ylab("Dunn-Smyth residual quantiles") +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.06)) +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = 0.06)) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(plot.margin = ggplot2::margin(10, 12, 10, 10))
+  p
 }

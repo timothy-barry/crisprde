@@ -8,7 +8,10 @@ run_multireplicate_guideseq_method(
   Y_mat,
   incorporate_occupancy_info = TRUE,
   multiplicity_alpha = 0.2,
-  lambda = NULL
+  lambda = NULL,
+  c_tukey_beta = 5,
+  c_tukey_sigma = 5,
+  robust_fit = TRUE
 )
 }
 \arguments{
@@ -48,7 +51,7 @@ multiplicity_alpha <- 0.2
 res_df <- run_multireplicate_guideseq_method(Y_mat, incorporate_occupancy_info = TRUE)
 
 # EVALUATE RESULT
-n_correct_nominations <- sum(res_df$nominated_off_target[seq(1, m_alt)])
-n_total_nominations <- sum(res_df$nominated_off_target)
+n_correct_nominations <- sum(res_df$nominated_window[seq(1, m_alt)])
+n_total_nominations <- sum(res_df$nominated_window)
 fdp <- (n_total_nominations - n_correct_nominations)/n_total_nominations
 }

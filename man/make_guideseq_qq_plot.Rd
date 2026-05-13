@@ -4,7 +4,12 @@
 \alias{make_guideseq_qq_plot}
 \title{Make GUIDE-seq QQ plot}
 \usage{
-make_guideseq_qq_plot(res_df, color_ground_truth = FALSE)
+make_guideseq_qq_plot(
+  res_df,
+  color_ground_truth = FALSE,
+  rev_log_trans = TRUE,
+  min_p = 1e-16
+)
 }
 \arguments{
 \item{res_df}{a data frame with column \code{p_value} giving the p-value of a given locus}
