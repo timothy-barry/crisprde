@@ -300,8 +300,29 @@ get_p_value_given_test_stat_prob_vector <- function(test_stat, right_tail_prob_v
 }
 
 
-# clustering loci; computing distances between occupied loci
-compute_distances_between_occupied_loci <- function(count_df, thresh = 20) {
+#' Cluster loci
+#'
+#' Clusters loci via single-linkage clustering
+#'
+#' @param count_df a data frame containing columns chr, coord
+#' @param thresh clustering threshold; occupied bases within this distance are clustered together
+#' @param padding amount of padding to add to either side of each cluster
+#'
+#' @returns `count_df` with the additional columns appended:
+#' - `group_string` (a string indicating the cluster to which a given base belongs)
+#' - `group_chr` (coordinate of the group)
+#' - `min_group_coord` (minumum coordinate of the group)
+#' - `max_group_coord` (maximum coordinate of the group)
+#' @export
+#'
+#' @examples
+#' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
+#' count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+#'  dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id %in% 1:2) |>
+#'  dplyr::filter(chr != "chrM") |>
+#'  dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id)
+#' clustered_count_df <- cluster_loci(count_df)
+cluster_loci <- function(count_df, thresh = 100L, padding = 25L) {
   # 1. simple distance
   count_df_w_dist <- count_df |>
     dplyr::group_by(chr) |>
@@ -316,9 +337,17 @@ compute_distances_between_occupied_loci <- function(count_df, thresh = 20) {
     }
     group_id[i] <- curr_group_id
   }
-  count_df_w_dist <- count_df_w_dist |>
-    dplyr::ungroup() |> dplyr::mutate(group_id = group_id)
-  return(count_df_w_dist)
+  count_df_w_dist_and_group_string <- count_df_w_dist |>
+    dplyr::ungroup() |>
+    dplyr::mutate(group_id = group_id) |>
+    dplyr::group_by(group_id) |>
+    dplyr::mutate(group_chr = chr[1],
+                  min_group_coord = min(coord) - padding,
+                  max_group_coord = max(coord) + padding) |>
+    dplyr::ungroup() |>
+    dplyr::mutate(group_string = factor(paste0(group_chr, ":", min_group_coord, "-", max_group_coord)),
+                  group_id = NULL)
+  return(count_df_w_dist_and_group_string)
 }
 
 
@@ -335,67 +364,55 @@ compute_distances_between_occupied_loci <- function(count_df, thresh = 20) {
 #'
 #' @examples
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-#' count_df_trt <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
-#'  dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id %in% 1:2) |>
-#'  dplyr::filter(chr != "chrM")
-#' Y_mat <- construct_replicate_count_table(count_df_trt)
-#' res <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10)
-construct_replicate_count_table <- function(count_df, thresh = 100L, padding = 25L) {
+#' count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+#'  dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id %in% 1:2, chr != "chrM") |>
+#'  dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id)
+#' clustered_count_df <- cluster_loci(count_df)
+#' Y_mat <- construct_replicate_count_table(clustered_count_df)
+construct_replicate_count_table <- function(clustered_count_df) {
   # if primer_type is present, append that to rep-id
-  if ("primer_type" %in% colnames(count_df)) count_df <- count_df |> dplyr::mutate(replicate_id = paste0(replicate_id, "-", primer_type))
-  # cluster bases into windows across replicates
-  count_df_with_group_id <- compute_distances_between_occupied_loci(count_df, thresh = thresh) |>
-    dplyr::group_by(group_id, replicate_id) |>
-    dplyr::summarize(chr = chr[1],
-                     min_coord = coord[1] - padding,
-                     max_coord = coord[length(coord)] + padding,
-                     umi_count = sum(umi_count),
-                     total_read_count = sum(total_read_count),
-                     replicate_id = replicate_id[1],
-                     on_target = on_target[1]) |>
-    dplyr::ungroup() |>
-    dplyr::arrange(replicate_id, group_id)
+  if ("primer_type" %in% colnames(clustered_count_df)) {
+    clustered_count_df <- clustered_count_df |> dplyr::mutate(replicate_id = paste0(replicate_id, "-", primer_type), primer_type = NULL)
+  }
+  # sum over UMIs within a given (window, replicate) pair
+  collapsed_count_df <- clustered_count_df |>
+    dplyr::group_by(replicate_id, group_string) |>
+    dplyr::summarize(umi_count = sum(umi_count), .groups = "drop") |>
+    dplyr::arrange(replicate_id, group_string)
+
   # construct Y_mat
-  replicate_idx <- match(x = count_df_with_group_id$replicate_id, unique(count_df_with_group_id$replicate_id))
+  replicate_idx <- match(x = collapsed_count_df$replicate_id, unique(collapsed_count_df$replicate_id))
+  group_idx <- match(x = collapsed_count_df$group_string, unique(collapsed_count_df$group_string))
   Y_mat <- Matrix::sparseMatrix(i = replicate_idx,
-                                j = count_df_with_group_id$group_id,
-                                x = count_df_with_group_id$umi_count) |>
+                                j = group_idx,
+                                x = collapsed_count_df$umi_count) |>
     as.matrix()
-  window_ids <- count_df_with_group_id |>
-    dplyr::group_by(group_id) |>
-    dplyr::summarize(window_id = paste0(chr[1], ":", min(min_coord), "-", max(max_coord))) |>
-    dplyr::ungroup() |> dplyr::arrange(group_id) |> dplyr::pull(window_id)
-  colnames(Y_mat) <- window_ids
-  rownames(Y_mat) <- unique(count_df_with_group_id$replicate_id)
-  # apply method
+  rownames(Y_mat) <- unique(collapsed_count_df$replicate_id)
+  colnames(Y_mat) <- unique(collapsed_count_df$group_string)
   return(Y_mat)
 }
 
 
 #' Tune hyperparameters
 #'
-#' @param Y_mat_trt
-#' @param Y_mat_cntrl
-#' @param c_grid
-#' @param lambda_grid
-#' @param multiplicity_alpha
-#' @param max_false_discs
+#' @param Y_mat_trt treated count matrix
+#' @param Y_mat_cntrl control count matrix
+#' @param c_grid robust hyperparm grid
+#' @param lambda_grid lambda grid
+#' @param multiplicity_alpha nominal fdr
+#' @param max_false_discs maximum false discoveries permitted in the control condition
 #'
-#' @returns
+#' @returns a list with elements `selected_params`, `selected_trt_run`, `selected_cntrl_run`, `grid_results`
 #' @export
 #'
 #' @examples
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-#' count_tables_dir <- paste0(elane_dir, "count_tables/")
-#' combined_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds"))
-#' condition_vector <- c("trt", "cntrl")
-#' Y_mat_trt <- combined_count_df |>
-#'  dplyr::filter(treated, cas9_variant == "hifi_cas9", chr != "chrM") |>
-#'  construct_replicate_count_table()
-#' Y_mat_cntrl <- combined_count_df |>
-#'  dplyr::filter(!treated, cas9_variant == "hifi_cas9", chr != "chrM") |>
-#'  construct_replicate_count_table()
-#' out <- tune_hyperparameters(Y_mat_trt, Y_mat_cntrl)
+#' count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+#' dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2, chr != "chrM")
+#' Y_mat_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
+#' Y_mat_cntrl <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
+#'
+#' hyperparam_out <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl, c_grid = c(5, 25), lambda_grid = c(5, 50))
 tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25, 50, 100),
                                  lambda_grid = c(0, 5, 10, 20, 50, 100, 500), multiplicity_alpha = 0.2, max_false_discs = 1L) {
   condition_grid <- c("trt", "cntrl")
@@ -446,8 +463,10 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25
     selected_trt_run <- NA
     selected_cntrl_run <- NA
   }
-  ret <- list(selected_params = selected_params, selected_trt_run = selected_trt_run,
-              selected_cntrl_run = selected_cntrl_run, grid_results = grid_results, summary_df = summary_df)
+  ret <- list(selected_params = selected_params,
+              selected_trt_run = selected_trt_run,
+              selected_cntrl_run = selected_cntrl_run,
+              grid_results = grid_results, summary_df = summary_df)
   return(ret)
 }
 
@@ -468,13 +487,22 @@ load_crispritz_output <- function(targets_file_path) {
                   "gRNA" = "crRNA", "dna" = "DNA", "chromosome" = "Chromosome",
                   "posit" = "Position", "cluster_posit" = "Cluster Position",
                   "strand" = "Direction")
-  dna_width <- nchar(gsub(pattern = "-", replacement = "", x = df$dna))
+  dna_width <- nchar(gsub(pattern = "-", replacement = "", x = df$dna)) - 3L # subtract the PAM
   df$dna_width <- dna_width
   return(df)
 }
 
 
 #' Overlap homology and result df
+#'
+#' Add colummns:
+#' - `has_homology_hit` (indicating whether there is a homology hit inside the window)
+#' - `homology_n_mismatches` (indicating the number of mismatches between aligned spacer and protospacer sequence)
+#' - `homology_n_bulges` (indicating number of bulges between aligned spacer and protospacer sequence)
+#' - `homology_posit` (indicating the position of the start of the protospacer)
+#' - `homology_strand` (indicating whether the protospacer is on the plus or minus strand)
+#' - `homology_dna` (aligned protospacer sequence)
+#' - `homology_gRNA` (aligned spacer sequence)
 #'
 #' @param result_df output of run_multireplicate_guideseq_method
 #' @param homology_df a homology data frame (for instance, output of load_crispritz_output)
@@ -517,36 +545,44 @@ overlap_homology_and_result_dfs <- function(result_df, homology_df) {
     dplyr::mutate(has_homology_hit = FALSE, homology_n_mismatches = NA_real_,
                   homology_n_bulges = NA_real_, homology_posit = NA_real_,
                   homology_strand = NA_character_, homology_dna = NA_character_,
-                  homology_gRNA = NA_character_)
+                  homology_gRNA = NA_character_, homology_dna_width = NA_integer_)
 
   # create hit df, which records all the hits, alongside n_total_changes,
-  if (length(hits) > 0L) {
-    hit_df <- data.frame(
-      result_idx = S4Vectors::queryHits(hits),
-      homology_idx = S4Vectors::subjectHits(hits)) |>
-      dplyr::mutate(
-        alignment_score = homology_df$n_mismatches[homology_idx] + 2 * homology_df$n_bulges[homology_idx]
-      )
-
-    n_hits <- tabulate(hit_df$result_idx, nbins = nrow(result_df_new))
-    result_df_new$has_homology_hit <- n_hits > 0L
-
-    best_hit_df <- hit_df |>
-      dplyr::arrange(result_idx, alignment_score, homology_idx) |>
-      dplyr::group_by(result_idx) |>
-      dplyr::slice(1L) |>
-      dplyr::ungroup()
-
-    result_idx <- best_hit_df$result_idx
-    homology_idx <- best_hit_df$homology_idx
-    result_df_new$homology_n_mismatches[result_idx] <- homology_df$n_mismatches[homology_idx]
-    result_df_new$homology_n_bulges[result_idx] <- homology_df$n_bulges[homology_idx]
-    result_df_new$homology_posit[result_idx] <- homology_df$posit[homology_idx]
-    result_df_new$homology_strand[result_idx] <- homology_df$strand[homology_idx]
-    result_df_new$homology_dna[result_idx] <- homology_df$dna[homology_idx]
-    result_df_new$homology_gRNA[result_idx] <- homology_df$gRNA[homology_idx]
+  if (length(hits) == 0L) {
+    stop("No overlap between homology data frame and result data frame.")
   }
 
-  return(result_df_new)
-}
+  hit_df <- data.frame(
+    result_idx = S4Vectors::queryHits(hits),
+    homology_idx = S4Vectors::subjectHits(hits)) |>
+    dplyr::mutate(
+      alignment_score = homology_df$n_mismatches[homology_idx] + 2 * homology_df$n_bulges[homology_idx]
+    )
 
+  n_hits <- tabulate(hit_df$result_idx, nbins = nrow(result_df_new))
+  result_df_new$has_homology_hit <- n_hits > 0L
+
+  best_hit_df <- hit_df |>
+    dplyr::arrange(result_idx, alignment_score, homology_idx) |>
+    dplyr::group_by(result_idx) |>
+    dplyr::slice(1L) |>
+    dplyr::ungroup()
+
+  # combine information across data frames
+  result_idx <- best_hit_df$result_idx
+  homology_idx <- best_hit_df$homology_idx
+  result_df_new$homology_n_mismatches[result_idx] <- homology_df$n_mismatches[homology_idx]
+  result_df_new$homology_n_bulges[result_idx] <- homology_df$n_bulges[homology_idx]
+  result_df_new$homology_posit[result_idx] <- homology_df$posit[homology_idx]
+  result_df_new$homology_dna_width[result_idx] <- homology_df$dna_width[homology_idx]
+  result_df_new$homology_strand[result_idx] <- homology_df$strand[homology_idx]
+  result_df_new$homology_dna[result_idx] <- homology_df$dna[homology_idx]
+  result_df_new$homology_gRNA[result_idx] <- homology_df$gRNA[homology_idx]
+
+  # identify the cut site
+  result_df_new_w_cut <- result_df_new |>
+    dplyr::mutate(homology_cut_start = homology_posit + 1L + ifelse(homology_strand == "+", homology_dna_width - 4L, 3L),
+                  homology_cut_end = homology_posit + 1L + ifelse(homology_strand == "+", homology_dna_width - 3L, 4L))
+
+  return(result_df_new_w_cut)
+}

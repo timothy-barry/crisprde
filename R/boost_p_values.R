@@ -23,7 +23,8 @@ boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 #' count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 #'  dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id %in% 1:2) |>
-#'  dplyr::filter(chr != "chrM")
+#'  dplyr::filter(chr != "chrM") |>
+#'  dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id)
 #' Y_mat <- construct_replicate_count_table(count_df)
 #' result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE)$res_df
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")

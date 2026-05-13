@@ -14,21 +14,30 @@ tune_hyperparameters(
 )
 }
 \arguments{
-\item{max_false_discs}{}
+\item{Y_mat_trt}{treated count matrix}
+
+\item{Y_mat_cntrl}{control count matrix}
+
+\item{c_grid}{robust hyperparm grid}
+
+\item{lambda_grid}{lambda grid}
+
+\item{multiplicity_alpha}{nominal fdr}
+
+\item{max_false_discs}{maximum false discoveries permitted in the control condition}
+}
+\value{
+a list with elements \code{selected_params}, \code{selected_trt_run}, \code{selected_cntrl_run}, \code{grid_results}
 }
 \description{
 Tune hyperparameters
 }
 \examples{
 elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-count_tables_dir <- paste0(elane_dir, "count_tables/")
-combined_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds"))
-condition_vector <- c("trt", "cntrl")
-Y_mat_trt <- combined_count_df |>
- dplyr::filter(treated, cas9_variant == "hifi_cas9", chr != "chrM") |>
- construct_replicate_count_table()
-Y_mat_cntrl <- combined_count_df |>
- dplyr::filter(!treated, cas9_variant == "hifi_cas9", chr != "chrM") |>
- construct_replicate_count_table()
-out <- tune_hyperparameters(Y_mat_trt, Y_mat_cntrl)
+count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2, chr != "chrM")
+Y_mat_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
+Y_mat_cntrl <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
+
+hyperparam_out <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl, c_grid = c(5, 25), lambda_grid = c(5, 50))
 }

@@ -4,7 +4,7 @@
 \alias{construct_replicate_count_table}
 \title{Construct replicate count table}
 \usage{
-construct_replicate_count_table(count_df, thresh = 100L, padding = 25L)
+construct_replicate_count_table(clustered_count_df)
 }
 \arguments{
 \item{count_df}{a data frame with columns \code{chr}, \code{coord}, \code{strand}, \code{replicate_id}, and \code{umi_count}.}
@@ -21,9 +21,9 @@ Takes the output from the GUIDE-seq pipeline as input; outputs a count matrix fo
 }
 \examples{
 elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-count_df_trt <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
- dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id \%in\% 1:2) |>
- dplyr::filter(chr != "chrM")
-Y_mat <- construct_replicate_count_table(count_df_trt)
-res <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10)
+count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+ dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id \%in\% 1:2, chr != "chrM") |>
+ dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id)
+clustered_count_df <- cluster_loci(count_df)
+Y_mat <- construct_replicate_count_table(clustered_count_df)
 }

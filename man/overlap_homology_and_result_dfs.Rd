@@ -15,5 +15,14 @@ overlap_homology_and_result_dfs(result_df, homology_df)
 an augmented version of \code{result_df} with homology information appended
 }
 \description{
-Overlap homology and result df
+Add colummns:
+\itemize{
+\item \code{has_homology_hit} (indicating whether there is a homology hit inside the window)
+\item \code{homology_n_mismatches} (indicating the number of mismatches between aligned spacer and protospacer sequence)
+\item \code{homology_n_bulges} (indicating number of bulges between aligned spacer and protospacer sequence)
+\item \code{homology_posit} (indicating the position of the start of the protospacer)
+\item \code{homology_strand} (indicating whether the protospacer is on the plus or minus strand)
+\item \code{homology_dna} (aligned protospacer sequence)
+\item \code{homology_gRNA} (aligned spacer sequence)
+}
 }

@@ -3,6 +3,7 @@
 export(align_spacer_seq)
 export(align_spacer_to_genome)
 export(append_lead_base)
+export(cluster_loci)
 export(collapse_count_matrix_by_allele)
 export(compute_basic_statistics_on_multivariate_amplicon_seq_data)
 export(compute_bayesian_estimate_for_amplicon)
