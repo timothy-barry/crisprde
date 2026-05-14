@@ -7,17 +7,13 @@
 construct_replicate_count_table(clustered_count_df)
 }
 \arguments{
-\item{count_df}{a data frame with columns \code{chr}, \code{coord}, \code{strand}, \code{replicate_id}, and \code{umi_count}.}
-
-\item{thresh}{clustering threshold; bases within this distance are clustered together into a window}
-
-\item{padding}{amount of padding to add to either end of each window}
+\item{clustered_count_df}{output of \code{cluster_loci()}, with columns \code{replicate_id}, \code{group_string}, and \code{umi_count}.}
 }
 \value{
 an integer matrix with replicates in the rows and windows in the columns. An entry of the matrix indicates the number of UMIs observed within a given window and replicate.
 }
 \description{
-Takes the output from the GUIDE-seq pipeline as input; outputs a count matrix for statistical modeling
+Takes the output of \code{cluster_loci()} as input; outputs a count matrix for statistical modeling
 }
 \examples{
 elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")

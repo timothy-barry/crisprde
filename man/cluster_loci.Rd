@@ -17,8 +17,8 @@ cluster_loci(count_df, thresh = 100L, padding = 25L)
 \code{count_df} with the additional columns appended:
 \itemize{
 \item \code{group_string} (a string indicating the cluster to which a given base belongs)
-\item \code{group_chr} (coordinate of the group)
-\item \code{min_group_coord} (minumum coordinate of the group)
+\item \code{group_chr} (chromosome of the group)
+\item \code{min_group_coord} (minimum coordinate of the group)
 \item \code{max_group_coord} (maximum coordinate of the group)
 }
 }

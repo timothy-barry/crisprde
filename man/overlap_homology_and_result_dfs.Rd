@@ -4,7 +4,7 @@
 \alias{overlap_homology_and_result_dfs}
 \title{Overlap homology and result df}
 \usage{
-overlap_homology_and_result_dfs(result_df, homology_df)
+overlap_homology_and_result_dfs(result_df, homology_df, clustered_count_df)
 }
 \arguments{
 \item{result_df}{output of run_multireplicate_guideseq_method}
@@ -32,5 +32,6 @@ elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elan
 count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2, chr != "chrM")
 clustered_count_df <- count_df_all |> dplyr::filter(treated) |> cluster_loci()
-res_df <- clustered_count_df |> construct_replicate_count_table() |> run_multireplicate_guideseq_method()
+result_df <- clustered_count_df |> construct_replicate_count_table() |> run_multireplicate_guideseq_method() |> getElement("res_df")
+result_df_with_homology <- overlap_homology_and_result_dfs(result_df, homology_df)
 }
