@@ -1,4 +1,3 @@
-
 boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
   # compute the align score as homology_n_mismatches + 2 * homology_n_bulges; for na windows, the max of this quantity + 1
   augmented_result_df <- augmented_result_df |>
@@ -15,20 +14,21 @@ boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
 
 #' Boost p-values (Genovese)
 #'
-#' @param augmented_result_df output of `overlap_homology_and_result_dfs`
+#' @param augmented_result_df result data frame with homology annotations
 #' @param multiplicity_alpha nominal FDR
 #' @param gamma gamma
 #'
 #' @examples
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-#' count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+#' clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 #'  dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id %in% 1:2) |>
 #'  dplyr::filter(chr != "chrM") |>
-#'  dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id)
-#' Y_mat <- construct_replicate_count_table(count_df)
-#' result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE)$res_df
+#'  dplyr::select(chr, coord, strand, umi_count, replicate_id) |>
+#'  cluster_loci()
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
-#' augmented_result_df <- overlap_homology_and_result_dfs(result_df, homology_df)
+#' annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df) |> dplyr::filter(homology_has_hit)
+#' Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
+#' augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
 #' weighted_result_df <- boost_p_values_genovese(augmented_result_df)
 #' qq_plot <- weighted_result_df |> dplyr::mutate(p_value = p_value_weighted) |> make_guideseq_qq_plot()
 boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.2, gamma = 0.5) {

@@ -11,13 +11,16 @@ run_multireplicate_guideseq_method(
   lambda = NULL,
   c_tukey_beta = 5,
   c_tukey_sigma = 5,
-  robust_fit = TRUE
+  robust_fit = TRUE,
+  annotated_clustered_count_df = NULL
 )
 }
 \arguments{
 \item{Y_mat}{the r x m integer matrix of UMI counts, where r is the number of replicates and m is the number of windows}
 
 \item{incorporate_occupancy_info}{a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation}
+
+\item{annotated_clustered_count_df}{optional output of \code{annotate_clustered_count_df_with_homology()}; if supplied, homology annotations are joined to the result data frame by window}
 }
 \value{
 a data frame containing a p-value for each window

@@ -7,7 +7,7 @@
 construct_replicate_count_table(clustered_count_df)
 }
 \arguments{
-\item{clustered_count_df}{output of \code{cluster_loci()}, with columns \code{replicate_id}, \code{group_string}, and \code{umi_count}.}
+\item{clustered_count_df}{output of \code{cluster_loci()}, with columns \code{replicate_id}, \code{window}, and \code{umi_count}.}
 }
 \value{
 an integer matrix with replicates in the rows and windows in the columns. An entry of the matrix indicates the number of UMIs observed within a given window and replicate.

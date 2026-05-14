@@ -155,6 +155,7 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 #'
 #' @param Y_mat the r x m integer matrix of UMI counts, where r is the number of replicates and m is the number of windows
 #' @param incorporate_occupancy_info a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation
+#' @param annotated_clustered_count_df optional output of `annotate_clustered_count_df_with_homology()`; if supplied, homology annotations are joined to the result data frame by window
 #'
 #' @returns a data frame containing a p-value for each window
 #' @examples
@@ -188,13 +189,22 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 #' fdp <- (n_total_nominations - n_correct_nominations)/n_total_nominations
 run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE,
                                                multiplicity_alpha = 0.2, lambda = NULL, c_tukey_beta = 5,
-                                               c_tukey_sigma = 5, robust_fit = TRUE) {
+                                               c_tukey_sigma = 5, robust_fit = TRUE, annotated_clustered_count_df = NULL) {
+  MIN_NONZERO_COUNT <- 25L
   if (is.null(colnames(Y_mat))) warning("Y_mat must have column names (to identify the windows).")
   X <- Y_mat > 0
   storage.mode(X) <- "integer"
-  Omega <- as.matrix(generate_omega(nrow(Y_mat)))
+
+  # check for replicates with low counts
+  nonzero_replicate_count <- rowSums(X)
+  if (any(nonzero_replicate_count <= MIN_NONZERO_COUNT)) {
+    offending_rows <- paste0(which(nonzero_replicate_count <= MIN_NONZERO_COUNT), collapse = ", ")
+    msg <- paste0("Row ",  offending_rows, " has fewer than ", MIN_NONZERO_COUNT, " windows with a nonzero count. Consider dropping this sample or combining this sample with another (e.g., by pooling together primer chanels within a replicate).")
+    warning(msg)
+  }
 
   # 1. fit occupancy model and compute marginal occupancy probabilities
+  Omega <- as.matrix(generate_omega(nrow(Y_mat)))
   if (incorporate_occupancy_info) {
     pi_hat <- fit_tbp_model(X)
     if (!is.null(pi_hat)) {
@@ -278,6 +288,13 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
                        lambda = lambda,
                        occupancy_pattern = col_keys) |> dplyr::arrange(p_value)
   rownames(res_df) <- NULL
+  if (!is.null(annotated_clustered_count_df)) { # if annotated_clustered_count_df supplied, join with the results
+    right_df <- annotated_clustered_count_df |>
+      dplyr::select(window, starts_with("homology")) |>
+      dplyr::filter(window %in% res_df$window) |>
+      dplyr::distinct()
+    res_df <- dplyr::left_join(res_df, right_df, by = "window")
+  }
   ests_list <- list(mu_theta_hat_mat = mu_theta_hat_mat)
   if (incorporate_occupancy_info) ests_list$pi_hat <- pi_hat
   ret <- list(res_df = res_df, ests_list = ests_list)
@@ -310,9 +327,9 @@ get_p_value_given_test_stat_prob_vector <- function(test_stat, right_tail_prob_v
 #'
 #' @returns `count_df` with the additional columns appended:
 #' - `window` (a string indicating the cluster to which a given base belongs)
-#' - `group_chr` (chromosome of the group)
-#' - `min_group_coord` (minimum coordinate of the group)
-#' - `max_group_coord` (maximum coordinate of the group)
+#' - `cluster_chr` (chromosome of the group)
+#' - `min_cluster_coord` (minimum coordinate of the group)
+#' - `max_cluster_coord` (maximum coordinate of the group)
 #' @export
 #'
 #' @examples
@@ -341,12 +358,12 @@ cluster_loci <- function(count_df, thresh = 100L, padding = 25L) {
     dplyr::ungroup() |>
     dplyr::mutate(group_id = group_id) |>
     dplyr::group_by(group_id) |>
-    dplyr::mutate(group_chr = chr[1],
-                  min_group_coord = min(coord) - padding,
-                  max_group_coord = max(coord) + padding) |>
+    dplyr::mutate(cluster_chr = chr[1],
+                  min_cluster_coord = min(coord) - padding,
+                  max_cluster_coord = max(coord) + padding) |>
     dplyr::ungroup() |>
-    dplyr::mutate(window = paste0(group_chr, ":", min_group_coord, "-", max_group_coord),
-                  group_id = NULL)
+    dplyr::mutate(window = paste0(cluster_chr, ":", min_cluster_coord, "-", max_cluster_coord),
+                  group_id = NULL, simple_dist = NULL)
   return(count_df_w_dist_and_group_string)
 }
 
@@ -490,11 +507,10 @@ load_crispritz_output <- function(targets_file_path) {
   return(df)
 }
 
-
-#' Overlap homology and result df
+#' Annotate clustered count df with homology
 #'
 #' Add colummns:
-#' - `has_homology_hit` (indicating whether there is a homology hit inside the window)
+#' - `homology_has_hit` (indicating whether there is a homology hit inside the window)
 #' - `homology_n_mismatches` (indicating the number of mismatches between aligned spacer and protospacer sequence)
 #' - `homology_n_bulges` (indicating number of bulges between aligned spacer and protospacer sequence)
 #' - `homology_posit` (indicating the position of the start of the protospacer)
@@ -502,29 +518,30 @@ load_crispritz_output <- function(targets_file_path) {
 #' - `homology_dna` (aligned protospacer sequence)
 #' - `homology_gRNA` (aligned spacer sequence)
 #'
-#' @param result_df output of run_multireplicate_guideseq_method
-#' @param homology_df a homology data frame (for instance, output of load_crispritz_output)
+#' @param clustered_count_df output of `cluster_loci()`
+#' @param homology_df output of `load_crispritz_output()`
 #'
-#' @returns an augmented version of `result_df` with homology information appended
-#' @export
 #' @examples
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-#' count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
-#' dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2, chr != "chrM")
-#' clustered_count_df <- count_df_all |> dplyr::filter(treated) |> cluster_loci()
-#' result_df <- clustered_count_df |> construct_replicate_count_table() |> run_multireplicate_guideseq_method() |> getElement("res_df")
-#' result_df_with_homology <- overlap_homology_and_result_dfs(result_df, homology_df, clustered_count_df)
-overlap_homology_and_result_dfs <- function(result_df, homology_df, clustered_count_df) {
-  window_parts <- stringr::str_match(result_df$window, "^([^:]+):(\\d+)-(\\d+)$")
+#' clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+#' dplyr::filter(treated & cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2 & chr != "chrM") |>
+#' dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
+#' cluster_loci()
+#'
+#' annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df)
+#' @export
+annotate_clustered_count_df_with_homology <- function(clustered_count_df, homology_df) {
+  unique_cluster_df <- clustered_count_df |>
+    dplyr::select(chr = cluster_chr, start = min_cluster_coord, end = max_cluster_coord, window = window) |>
+    dplyr::distinct()
 
   # initialize granges object for result
-  result_gr <- GenomicRanges::GRanges(
-    seqnames = window_parts[, 2],
-    ranges = IRanges::IRanges(
-      start = as.integer(window_parts[, 3]),
-      end = as.integer(window_parts[, 4])))
-  S4Vectors::mcols(result_gr) <- result_df
+  cluster_gr <- GenomicRanges::GRanges(
+    seqnames = unique_cluster_df$chr,
+    ranges = IRanges::IRanges(start = unique_cluster_df$start, end = unique_cluster_df$end)
+  )
+  S4Vectors::mcols(cluster_gr) <- unique_cluster_df |> dplyr::select(window)
 
   # initialze granges object for homology df
   homology_gr <- GenomicRanges::GRanges(
@@ -536,68 +553,76 @@ overlap_homology_and_result_dfs <- function(result_df, homology_df, clustered_co
   S4Vectors::mcols(homology_gr) <- homology_df
 
   # find overlaps
-  hits <- GenomicRanges::findOverlaps(
-    query = result_gr,
-    subject = homology_gr,
-    ignore.strand = TRUE)
+  hits <- GenomicRanges::findOverlaps(query = cluster_gr,
+                                      subject = homology_gr,
+                                      ignore.strand = TRUE)
 
-  # add columns to the result df related to homology
-  result_df_new <- result_df |>
-    dplyr::mutate(has_homology_hit = FALSE, homology_n_mismatches = NA_real_,
+  # add columns to the cluster df related to homology
+  cluster_df_new <- unique_cluster_df |>
+    dplyr::mutate(homology_has_hit = FALSE, homology_n_mismatches = NA_real_,
                   homology_n_bulges = NA_real_, homology_posit = NA_real_,
                   homology_strand = NA_character_, homology_dna = NA_character_,
                   homology_gRNA = NA_character_, homology_protospacer_width = NA_integer_)
 
-  # create hit df, which records all the hits, alongside n_total_changes,
-  if (length(hits) == 0L) {
-    stop("No overlap between homology data frame and result data frame.")
+  if (length(hits) > 0L) {
+    hit_df <- data.frame(
+      cluster_idx = S4Vectors::queryHits(hits),
+      homology_idx = S4Vectors::subjectHits(hits)) |>
+      dplyr::mutate(alignment_score = homology_df$n_mismatches[homology_idx] +
+                      2 * homology_df$n_bulges[homology_idx])
+
+    n_hits <- tabulate(hit_df$cluster_idx, nbins = nrow(cluster_df_new))
+    cluster_df_new$homology_has_hit <- n_hits > 0L
+    best_hit_df <- hit_df |>
+      dplyr::arrange(cluster_idx, alignment_score, homology_idx) |>
+      dplyr::group_by(cluster_idx) |>
+      dplyr::slice(1L) |>
+      dplyr::ungroup()
+
+    # combine information across data frames
+    cluster_idx <- best_hit_df$cluster_idx
+    homology_idx <- best_hit_df$homology_idx
+    cluster_df_new$homology_n_mismatches[cluster_idx] <- homology_df$n_mismatches[homology_idx]
+    cluster_df_new$homology_n_bulges[cluster_idx] <- homology_df$n_bulges[homology_idx]
+    cluster_df_new$homology_posit[cluster_idx] <- homology_df$posit[homology_idx]
+    cluster_df_new$homology_protospacer_width[cluster_idx] <- homology_df$protospacer_width[homology_idx]
+    cluster_df_new$homology_strand[cluster_idx] <- homology_df$strand[homology_idx]
+    cluster_df_new$homology_dna[cluster_idx] <- homology_df$dna[homology_idx]
+    cluster_df_new$homology_gRNA[cluster_idx] <- homology_df$gRNA[homology_idx]
   }
 
-  hit_df <- data.frame(
-    result_idx = S4Vectors::queryHits(hits),
-    homology_idx = S4Vectors::subjectHits(hits)) |>
-    dplyr::mutate(alignment_score = homology_df$n_mismatches[homology_idx] + 2 * homology_df$n_bulges[homology_idx])
-
-  n_hits <- tabulate(hit_df$result_idx, nbins = nrow(result_df_new))
-  result_df_new$has_homology_hit <- n_hits > 0L
-  best_hit_df <- hit_df |>
-    dplyr::arrange(result_idx, alignment_score, homology_idx) |>
-    dplyr::group_by(result_idx) |>
-    dplyr::slice(1L) |>
-    dplyr::ungroup()
-
-  # combine information across data frames
-  result_idx <- best_hit_df$result_idx
-  homology_idx <- best_hit_df$homology_idx
-  result_df_new$homology_n_mismatches[result_idx] <- homology_df$n_mismatches[homology_idx]
-  result_df_new$homology_n_bulges[result_idx] <- homology_df$n_bulges[homology_idx]
-  result_df_new$homology_posit[result_idx] <- homology_df$posit[homology_idx]
-  result_df_new$homology_protospacer_width[result_idx] <- homology_df$protospacer_width[homology_idx]
-  result_df_new$homology_strand[result_idx] <- homology_df$strand[homology_idx]
-  result_df_new$homology_dna[result_idx] <- homology_df$dna[homology_idx]
-  result_df_new$homology_gRNA[result_idx] <- homology_df$gRNA[homology_idx]
-
   # identify the cut site
-  result_df_new_w_cut <- result_df_new |>
+  cluster_df_new_w_cut <- cluster_df_new |>
     dplyr::mutate(homology_cut_start = homology_posit + 1L + ifelse(homology_strand == "+", homology_protospacer_width - 4L, 5L),
                   homology_cut_end = homology_posit + 1L + ifelse(homology_strand == "+", homology_protospacer_width - 3L, 6L))
-  # compute the modal base for each hit window
-  hit_windows <- result_df_new |> dplyr::filter(has_homology_hit) |> dplyr::pull(window)
-  modal_base_df <- clustered_count_df |>
-    dplyr::filter(window %in% hit_windows) |>
-    dplyr::group_by(window, coord) |>
-    dplyr::summarize(umi_count = sum(umi_count), .groups = "drop") |>
-    dplyr::group_by(window) |>
-    dplyr::reframe(modal_base = coord[umi_count == max(umi_count)])
-  modal_base_df_w_d <- result_df_new_w_cut |>
-    dplyr::filter(window %in% hit_windows) |>
-    dplyr::left_join(y = modal_base_df, by = "window") |>
-    dplyr::mutate(d_from_modal_base_to_cut_site = pmin(abs(modal_base - homology_cut_start), abs(modal_base - homology_cut_end))) |>
-    dplyr::group_by(window) |>
-    dplyr::slice(which(d_from_modal_base_to_cut_site == min(d_from_modal_base_to_cut_site))[1]) |>
-    dplyr::ungroup() |>
-    dplyr::select(window, d_from_modal_base_to_cut_site)
 
-  out <- dplyr::left_join(result_df_new_w_cut, modal_base_df_w_d, by = "window")
+  # compute the modal base for each hit window
+  hit_windows <- cluster_df_new |> dplyr::filter(homology_has_hit) |> dplyr::pull(window)
+  if (length(hit_windows) > 0L) {
+    modal_base_df <- clustered_count_df |>
+      dplyr::filter(window %in% hit_windows) |>
+      dplyr::group_by(window, coord) |>
+      dplyr::summarize(umi_count = sum(umi_count), .groups = "drop") |>
+      dplyr::group_by(window) |>
+      dplyr::reframe(modal_base = coord[umi_count == max(umi_count)])
+    modal_base_df_w_d <- cluster_df_new_w_cut |>
+      dplyr::filter(window %in% hit_windows) |>
+      dplyr::left_join(y = modal_base_df, by = "window") |>
+      dplyr::mutate(homology_modal_base_cut_distance = pmin(abs(modal_base - homology_cut_start),
+                                                            abs(modal_base - homology_cut_end))) |>
+      dplyr::group_by(window) |>
+      dplyr::slice(which(homology_modal_base_cut_distance == min(homology_modal_base_cut_distance))[1]) |>
+      dplyr::ungroup() |>
+      dplyr::select(window, homology_modal_base_cut_distance)
+  } else {
+    modal_base_df_w_d <- data.frame(window = character(), homology_modal_base_cut_distance = numeric())
+  }
+
+  cluster_df_new_w_cut_w_modal <- dplyr::left_join(cluster_df_new_w_cut,
+                                                   modal_base_df_w_d, by = "window") |>
+    dplyr::select(-chr, -start, -end, -homology_protospacer_width) |>
+    dplyr::relocate(window, homology_has_hit, homology_n_mismatches, homology_n_bulges, homology_modal_base_cut_distance)
+
+  out <- dplyr::left_join(clustered_count_df, cluster_df_new_w_cut_w_modal, by = "window")
   return(out)
 }
