@@ -16,7 +16,8 @@ boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
 #'
 #' @param augmented_result_df result data frame with homology annotations
 #' @param multiplicity_alpha nominal FDR
-#' @param gamma gamma
+#' @param gamma_align tuning parameter controlling the homology-score penalty
+#' @param gamma_distance tuning parameter controlling the modal-base-distance penalty
 #'
 #' @examples
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
@@ -31,12 +32,19 @@ boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
 #' augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
 #' weighted_result_df <- boost_p_values_genovese(augmented_result_df)
 #' qq_plot <- weighted_result_df |> dplyr::mutate(p_value = p_value_weighted) |> make_guideseq_qq_plot()
-boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.2, gamma = 0.5) {
-  # compute the alignment score
-  align_score <- augmented_result_df$homology_n_mismatches + 2 * augmented_result_df$homology_n_bulges
-  align_score[is.na(align_score)] <- max(align_score, na.rm = TRUE) + 1
+boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.2, gamma_align = 0.2, gamma_distance = 0.1) {
+  # get the alignment score
+  MAX_ALIGN_SCORE <- 9L
+  align_score <- augmented_result_df$homology_n_mismatches + 2L * augmented_result_df$homology_n_bulges
+  align_score <- pmin(align_score, MAX_ALIGN_SCORE)
+  align_score[is.na(align_score)] <- MAX_ALIGN_SCORE + 1L
+  # compute the distance of modal base to cut site
+  MAX_MODAL_DISTANCE <- 19L
+  modal_distance <- pmin(MAX_MODAL_DISTANCE, augmented_result_df$homology_modal_base_cut_distance)
+  modal_distance[is.na(modal_distance)] <- MAX_MODAL_DISTANCE + 1L
+
   # compute weights
-  w <- exp(-gamma * align_score)
+  w <- exp(-gamma_align * align_score - gamma_distance * modal_distance)
   w_tilde <- w/mean(w)
   p_value_weighted <- augmented_result_df$p_value/w_tilde
   q_value_weighted <- p.adjust(p = p_value_weighted, method = "BH")

@@ -7,7 +7,8 @@
 boost_p_values_genovese(
   augmented_result_df,
   multiplicity_alpha = 0.2,
-  gamma = 0.5
+  gamma_align = 0.2,
+  gamma_distance = 0.1
 )
 }
 \arguments{
@@ -15,7 +16,9 @@ boost_p_values_genovese(
 
 \item{multiplicity_alpha}{nominal FDR}
 
-\item{gamma}{gamma}
+\item{gamma_align}{tuning parameter controlling the homology-score penalty}
+
+\item{gamma_distance}{tuning parameter controlling the modal-base-distance penalty}
 }
 \description{
 Boost p-values (Genovese)
