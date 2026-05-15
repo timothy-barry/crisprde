@@ -188,7 +188,7 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 #' n_total_nominations <- sum(res_df$nominated_window)
 #' fdp <- (n_total_nominations - n_correct_nominations)/n_total_nominations
 run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE,
-                                               multiplicity_alpha = 0.2, lambda = NULL, c_tukey_beta = 5,
+                                               multiplicity_alpha = 0.1, lambda = NULL, c_tukey_beta = 5,
                                                c_tukey_sigma = 5, robust_fit = TRUE, annotated_clustered_count_df = NULL) {
   MIN_NONZERO_COUNT <- 25L
   if (is.null(colnames(Y_mat))) warning("Y_mat must have column names (to identify the windows).")
@@ -494,7 +494,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25
 #' @export
 #'
 #' @examples
-#' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+#' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 load_crispritz_output <- function(targets_file_path) {
   df <- readr::read_delim(file = targets_file_path) |>
     dplyr::rename("bulge_type" = "#Bulge type", "n_mismatches" = "Mismatches",
@@ -522,7 +522,7 @@ load_crispritz_output <- function(targets_file_path) {
 #' @param homology_df output of `load_crispritz_output()`
 #'
 #' @examples
-#' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+#' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 #' clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 #' dplyr::filter(treated & cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2 & chr != "chrM") |>

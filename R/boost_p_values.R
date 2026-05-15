@@ -22,17 +22,16 @@ boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
 #' @examples
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 #' clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
-#'  dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id %in% 1:2) |>
-#'  dplyr::filter(chr != "chrM") |>
+#'  dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id %in% 1:2 & chr != "chrM") |>
 #'  dplyr::select(chr, coord, strand, umi_count, replicate_id) |>
 #'  cluster_loci()
-#' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+#' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 #' annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df) |> dplyr::filter(homology_has_hit)
 #' Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
 #' augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
 #' weighted_result_df <- boost_p_values_genovese(augmented_result_df)
 #' qq_plot <- weighted_result_df |> dplyr::mutate(p_value = p_value_weighted) |> make_guideseq_qq_plot()
-boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.2, gamma_align = 0.2, gamma_distance = 0.1) {
+boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.1, gamma_align = NULL, gamma_distance = NULL) {
   # get the alignment score
   MAX_ALIGN_SCORE <- 9L
   align_score <- augmented_result_df$homology_n_mismatches + 2L * augmented_result_df$homology_n_bulges
@@ -44,13 +43,18 @@ boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.
   modal_distance[is.na(modal_distance)] <- MAX_MODAL_DISTANCE + 1L
 
   # compute weights
+  if (is.null(gamma_align)) gamma_align <- log(50)/(2 * max(align_score))
+  if (is.null(gamma_distance)) gamma_distance <- log(50)/(2 * max(modal_distance))
   w <- exp(-gamma_align * align_score - gamma_distance * modal_distance)
   w_tilde <- w/mean(w)
+
+  # compute weighted p-values and discovery set
   p_value_weighted <- augmented_result_df$p_value/w_tilde
   q_value_weighted <- p.adjust(p = p_value_weighted, method = "BH")
   nominated_window_weighted <- q_value_weighted < multiplicity_alpha
   out <- augmented_result_df |> dplyr::mutate(p_value_weighted = pmin(1, p_value_weighted),
-                                       nominated_window_weighted = nominated_window_weighted) |>
+                                              p_value_weight = w_tilde,
+                                              nominated_window_weighted = nominated_window_weighted) |>
     dplyr::arrange(p_value_weighted)
   return(out)
 }

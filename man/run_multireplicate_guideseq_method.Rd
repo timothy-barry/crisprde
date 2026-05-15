@@ -7,7 +7,7 @@
 run_multireplicate_guideseq_method(
   Y_mat,
   incorporate_occupancy_info = TRUE,
-  multiplicity_alpha = 0.2,
+  multiplicity_alpha = 0.1,
   lambda = NULL,
   c_tukey_beta = 5,
   c_tukey_sigma = 5,

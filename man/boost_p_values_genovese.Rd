@@ -6,9 +6,9 @@
 \usage{
 boost_p_values_genovese(
   augmented_result_df,
-  multiplicity_alpha = 0.2,
-  gamma_align = 0.2,
-  gamma_distance = 0.1
+  multiplicity_alpha = 0.1,
+  gamma_align = NULL,
+  gamma_distance = NULL
 )
 }
 \arguments{
@@ -26,11 +26,10 @@ Boost p-values (Genovese)
 \examples{
 elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
- dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id \%in\% 1:2) |>
- dplyr::filter(chr != "chrM") |>
+ dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id \%in\% 1:2 & chr != "chrM") |>
  dplyr::select(chr, coord, strand, umi_count, replicate_id) |>
  cluster_loci()
-homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df) |> dplyr::filter(homology_has_hit)
 Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
 augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
