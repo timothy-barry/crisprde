@@ -7,14 +7,37 @@
 run_read_qc_on_sample(sample_dirs)
 }
 \arguments{
-\item{sample_dir}{}
+\item{sample_dirs}{character vector of GENETHOFF/Donor-seq sample output
+directories.}
+}
+\value{
+a data frame of read counts by QC category and sample. Multimapping
+reads are split into discarded multimappers and retained exact-tie
+multimappers.
 }
 \description{
 Run read QC on sample
 }
-\examples{
-sample_dirs <- paste0("/Users/timbarry/research_code/genethoff-nf/demo/results/",
-c("Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1", "Jing_AAVS1_n1-10_Donor-Seq_IL2RG_GSP_minus_1"))
-qc_df <- run_read_qc_on_sample(sample_dirs)
+\details{
+The output has one row per \verb{(sample, category)} pair with columns \code{category},
+\code{n_reads}, and \code{sample}. For each alignment step, \code{n_reads_good_alignment}
+counts reads passing the high-MAPQ criteria, while
+\code{n_reads_retained_multimapped} counts low-MAPQ exact-tie multimappers retained
+by the GENETHOFF/Donor-seq pipeline when multimapper retention is enabled.
+\code{n_reads_discarded_multimapped} counts remaining multimappers that did not
+pass post-alignment QC. The corresponding R2 rescue categories use the \verb{_r2}
+suffix. The function infers these buckets from the pipeline logs; callers do
+not need to specify whether \code{keep_multimapped_reads} was \code{TRUE} or \code{FALSE}.
 
+In a stacked read-processing plot, the paired-end categories
+\code{n_reads_missing_dsodn_tag}, \code{n_reads_too_short}, \code{n_reads_unaligned},
+\code{n_reads_poorly_aligned}, \code{n_reads_discarded_multimapped},
+\code{n_reads_retained_multimapped}, and \code{n_reads_good_alignment} should sum to
+\code{n_total_reads}. The analogous R2 rescue categories should sum to
+\code{n_reads_r2_rescue_start}.
+}
+\examples{
+sample_dirs <- paste0("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_sbds/count_tables_with_multimap/",
+c("Jing_Max112625_1_SBDSP1_minus", "Jing_Max112625_1_SBDSP1_plus"))
+out <- run_read_qc_on_sample(sample_dirs)
 }

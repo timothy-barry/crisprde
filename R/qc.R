@@ -21,35 +21,65 @@ get_alignment_qc <- function(sample_dir, align_log, align_qc_log) {
   n_reads_1_alignment <- fetch_number(sample_dir = sample_dir, file_name = align_log, n_skip = 2L, posit_from_start = 2L)
   n_reads_2_plus_alignments <- fetch_number(sample_dir = sample_dir, file_name = align_log, n_skip = 3L, posit_from_start = 2L)
 
-  n_reads_good_mapq <- fetch_number(sample_dir = sample_dir, file_name = align_qc_log, n_skip = 0L, posit_from_end = 0L)
+  n_reads_passing_qc <- fetch_number(sample_dir = sample_dir, file_name = align_qc_log, n_skip = 0L, posit_from_end = 0L)
   n_reads_1_align_good_mapq <- fetch_number(sample_dir = sample_dir, file_name = align_qc_log, n_skip = 1L, posit_from_end = 0L)
   n_reads_1_alignment_poor_mapq <- n_reads_1_alignment - n_reads_1_align_good_mapq
   n_reads_2_plus_align_good_mapq <- fetch_number(sample_dir = sample_dir, file_name = align_qc_log, n_skip = 2L, posit_from_end = 0L)
-  n_reads_2_plus_align_poor_mapq <- n_reads_2_plus_alignments - n_reads_2_plus_align_good_mapq
 
-  n_reads_unmapped_or_poorly_mapped <- n_reads_0_alignments + n_reads_1_alignment_poor_mapq
-  n_reads_multimapped <- n_reads_2_plus_align_poor_mapq
+  n_reads_good_alignment <- n_reads_1_align_good_mapq + n_reads_2_plus_align_good_mapq
+  n_reads_retained_multimapped <- n_reads_passing_qc - n_reads_good_alignment
+  n_reads_discarded_multimapped <- n_reads_2_plus_alignments -
+    n_reads_2_plus_align_good_mapq -
+    n_reads_retained_multimapped
 
-  c(n_reads_good_mapq = n_reads_good_mapq,
+  counts_to_check <- c(n_reads_1_alignment_poor_mapq,
+                       n_reads_retained_multimapped,
+                       n_reads_discarded_multimapped)
+  if (any(is.na(counts_to_check)) || any(counts_to_check < 0L)) {
+    stop("Alignment QC counts are inconsistent for sample directory: ", sample_dir,
+         call. = FALSE)
+  }
+
+  c(n_reads_good_alignment = n_reads_good_alignment,
     n_reads_0_alignments = n_reads_0_alignments,
-    n_reads_unmapped_or_poorly_mapped = n_reads_unmapped_or_poorly_mapped,
-    n_reads_poorly_mapped = n_reads_unmapped_or_poorly_mapped - n_reads_0_alignments,
-    n_reads_multimapped = n_reads_multimapped)
+    n_reads_poorly_mapped = n_reads_1_alignment_poor_mapq,
+    n_reads_discarded_multimapped = n_reads_discarded_multimapped,
+    n_reads_retained_multimapped = n_reads_retained_multimapped)
 }
 
 
 #' Run read QC on sample
 #'
-#' @param sample_dir
+#' @param sample_dirs character vector of GENETHOFF/Donor-seq sample output
+#'   directories.
 #'
-#' @returns
+#' @returns a data frame of read counts by QC category and sample. Multimapping
+#'   reads are split into discarded multimappers and retained exact-tie
+#'   multimappers.
+#'
+#' @details
+#' The output has one row per `(sample, category)` pair with columns `category`,
+#' `n_reads`, and `sample`. For each alignment step, `n_reads_good_alignment`
+#' counts reads passing the high-MAPQ criteria, while
+#' `n_reads_retained_multimapped` counts low-MAPQ exact-tie multimappers retained
+#' by the GENETHOFF/Donor-seq pipeline when multimapper retention is enabled.
+#' `n_reads_discarded_multimapped` counts remaining multimappers that did not
+#' pass post-alignment QC. The corresponding R2 rescue categories use the `_r2`
+#' suffix. The function infers these buckets from the pipeline logs; callers do
+#' not need to specify whether `keep_multimapped_reads` was `TRUE` or `FALSE`.
+#'
+#' In a stacked read-processing plot, the paired-end categories
+#' `n_reads_missing_dsodn_tag`, `n_reads_too_short`, `n_reads_unaligned`,
+#' `n_reads_poorly_aligned`, `n_reads_discarded_multimapped`,
+#' `n_reads_retained_multimapped`, and `n_reads_good_alignment` should sum to
+#' `n_total_reads`. The analogous R2 rescue categories should sum to
+#' `n_reads_r2_rescue_start`.
 #' @export
 #'
 #' @examples
-#' sample_dirs <- paste0("/Users/timbarry/research_code/genethoff-nf/demo/results/",
-#' c("Jing_AAVS1_n1-10_Donor-Seq_AAVS1_GSP_plus_1", "Jing_AAVS1_n1-10_Donor-Seq_IL2RG_GSP_minus_1"))
-#' qc_df <- run_read_qc_on_sample(sample_dirs)
-#'
+#' sample_dirs <- paste0("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_sbds/count_tables_with_multimap/",
+#' c("Jing_Max112625_1_SBDSP1_minus", "Jing_Max112625_1_SBDSP1_plus"))
+#' out <- run_read_qc_on_sample(sample_dirs)
 run_read_qc_on_sample <- function(sample_dirs) {
   df_out <- lapply(X = sample_dirs, FUN = function(sample_dir) {
     # 0. total number of reads
@@ -77,14 +107,16 @@ run_read_qc_on_sample <- function(sample_dirs) {
                       "n_reads_too_short" = n_reads_too_short_paired_end,
                       "n_reads_unaligned" = paired_align_metrics[["n_reads_0_alignments"]],
                       "n_reads_poorly_aligned" = paired_align_metrics[["n_reads_poorly_mapped"]],
-                      "n_reads_multimapped" = paired_align_metrics[["n_reads_multimapped"]],
-                      "n_reads_good_alignment" = paired_align_metrics[["n_reads_good_mapq"]],
-                      "n_reads_r2_rescue_start" = paired_align_metrics[["n_reads_0_alignments"]] + n_reads_too_short_paired_end,
+                      "n_reads_discarded_multimapped" = paired_align_metrics[["n_reads_discarded_multimapped"]],
+                      "n_reads_retained_multimapped" = paired_align_metrics[["n_reads_retained_multimapped"]],
+                      "n_reads_good_alignment" = paired_align_metrics[["n_reads_good_alignment"]],
+                      "n_reads_r2_rescue_start" = n_r2_reads_rescue_start,
                       "n_reads_too_short_r2" = n_reads_too_short_r2,
                       "n_reads_unaligned_r2" = r2_alignment_metrics[["n_reads_0_alignments"]],
                       "n_reads_poorly_aligned_r2" = r2_alignment_metrics[["n_reads_poorly_mapped"]],
-                      "n_reads_multimapped_r2" = r2_alignment_metrics[["n_reads_multimapped"]],
-                      "n_reads_good_alignment_r2" = r2_alignment_metrics[["n_reads_good_mapq"]])
+                      "n_reads_discarded_multimapped_r2" = r2_alignment_metrics[["n_reads_discarded_multimapped"]],
+                      "n_reads_retained_multimapped_r2" = r2_alignment_metrics[["n_reads_retained_multimapped"]],
+                      "n_reads_good_alignment_r2" = r2_alignment_metrics[["n_reads_good_alignment"]])
       tidyr::pivot_longer(data = ret, cols = colnames(ret)) |>
       setNames(c("category", "n_reads")) |>
       dplyr::mutate(sample = BiocGenerics::basename(sample_dir))

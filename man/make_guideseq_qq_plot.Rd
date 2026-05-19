@@ -8,7 +8,8 @@ make_guideseq_qq_plot(
   res_df,
   color_ground_truth = FALSE,
   rev_log_trans = TRUE,
-  min_p = 1e-16
+  min_p = 1e-16,
+  annotate_discoveries = FALSE
 )
 }
 \arguments{

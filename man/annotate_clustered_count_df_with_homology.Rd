@@ -4,17 +4,24 @@
 \alias{annotate_clustered_count_df_with_homology}
 \title{Annotate clustered count df with homology}
 \usage{
-annotate_clustered_count_df_with_homology(clustered_count_df, homology_df)
+annotate_clustered_count_df_with_homology(
+  clustered_count_df,
+  homology_df = NULL,
+  n_run_df = NULL
+)
 }
 \arguments{
 \item{clustered_count_df}{output of \code{cluster_loci()}}
 
-\item{homology_df}{output of \code{load_crispritz_output()}}
+\item{homology_df}{optional output of \code{load_crispritz_output()}; if supplied, windows are annotated for overlap with CRISPRitz hits}
+
+\item{n_run_df}{optional output of \code{load_n_run_bed()}; if supplied, windows are annotated for overlap with N-runs}
 }
 \description{
 Add colummns:
 \itemize{
 \item \code{homology_has_hit} (indicating whether there is a homology hit inside the window)
+\item \code{overlaps_n_run} (indicating whether the window overlaps an N-run in the reference genome)
 \item \code{homology_n_mismatches} (indicating the number of mismatches between aligned spacer and protospacer sequence)
 \item \code{homology_n_bulges} (indicating number of bulges between aligned spacer and protospacer sequence)
 \item \code{homology_posit} (indicating the position of the start of the protospacer)
@@ -25,11 +32,13 @@ Add colummns:
 }
 \examples{
 homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 dplyr::filter(treated & cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2 & chr != "chrM") |>
 dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 cluster_loci()
 
-annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df)
+annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df, n_run_df)
+
 }

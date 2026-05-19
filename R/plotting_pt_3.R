@@ -32,7 +32,8 @@
 #' res_df$true_editing <- c(rep(TRUE, m_alt), rep(FALSE, m))
 #' p_all <- make_guideseq_qq_plot(res_df, color_ground_truth = TRUE)
 #' p_null <- make_guideseq_qq_plot(res_df[seq(m_alt+1, nrow(res_df)),], color_ground_truth = FALSE)
-make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_trans = TRUE, min_p = 1e-16) {
+make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_trans = TRUE, min_p = 1e-16, annotate_discoveries = FALSE) {
+  # restrict to minimum p-value, get rejection threshold
   if (!is.na(min_p)) {
     res_df <- res_df |> dplyr::mutate(p_value = ifelse(p_value < min_p, min_p, p_value))
   }
@@ -67,8 +68,23 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_tr
       ggplot2::scale_size_manual(values = c("Truly edited" = 1.5, "Truly unedited" = 0.5)) +
       ggplot2::guides(size = "none")
   } else {
-    p <- p + stat_qq_points(size = 0.5, ymin = min_p)
+    p <- p + stat_qq_points(size = 0.8, ymin = min_p)
   }
+
+  # annotate
+  if (annotate_discoveries) {
+    label_df <- res_df |> dplyr::mutate(
+      p_value_plot = pmax(p_value, min_p),
+      qq_x = stats::qunif(stats::ppoints(dplyr::n())[rank(p_value_plot, ties.method = "first")]),
+      label_y = pmin(1, p_value_plot * 1.5)
+    ) |>
+      dplyr::filter(nominated_window)
+    p <- p + ggplot2::geom_text(data = label_df,
+                                mapping = ggplot2::aes(x = qq_x, y = label_y, label = window_label),
+                                inherit.aes = FALSE, angle = 90,
+                                color = "red", size = 1.5, hjust = 1, vjust = 0.5)
+  }
+
   return(p)
 }
 

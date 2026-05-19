@@ -30,7 +30,7 @@ boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
 #' Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
 #' augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
 #' weighted_result_df <- boost_p_values_genovese(augmented_result_df)
-#' qq_plot <- weighted_result_df |> dplyr::mutate(p_value = p_value_weighted) |> make_guideseq_qq_plot()
+#' qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
 boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.1, gamma_align = NULL, gamma_distance = NULL) {
   # get the alignment score
   MAX_ALIGN_SCORE <- 9L
@@ -52,9 +52,13 @@ boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.
   p_value_weighted <- augmented_result_df$p_value/w_tilde
   q_value_weighted <- p.adjust(p = p_value_weighted, method = "BH")
   nominated_window_weighted <- q_value_weighted < multiplicity_alpha
-  out <- augmented_result_df |> dplyr::mutate(p_value_weighted = pmin(1, p_value_weighted),
-                                              p_value_weight = w_tilde,
-                                              nominated_window_weighted = nominated_window_weighted) |>
+
+  out <- augmented_result_df |>
+    dplyr::mutate(p_value_unweighted = p_value,
+                  nominated_window_unweighted = nominated_window,
+                  p_value = pmin(1, p_value_weighted),
+                  p_value_weight = w_tilde,
+                  nominated_window = nominated_window_weighted) |>
     dplyr::arrange(p_value_weighted)
   return(out)
 }

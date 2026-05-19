@@ -416,20 +416,48 @@ construct_replicate_count_table <- function(clustered_count_df) {
 #' @param lambda_grid lambda grid
 #' @param multiplicity_alpha nominal fdr
 #' @param max_false_discs maximum false discoveries permitted in the control condition
+#' @param annotated_clustered_count_df_trt optional annotated clustered count data frame for the treated condition; if supplied along with `annotated_clustered_count_df_cntrl`, Genovese p-value boosting is used
+#' @param annotated_clustered_count_df_cntrl optional annotated clustered count data frame for the control condition; if supplied along with `annotated_clustered_count_df_trt`, Genovese p-value boosting is used
 #'
 #' @returns a list with elements `selected_params`, `selected_trt_run`, `selected_cntrl_run`, `grid_results`
 #' @export
 #'
 #' @examples
+#' # basic
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 #' count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 #' dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2, chr != "chrM")
 #' Y_mat_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
-#' Y_mat_cntrl <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
-#'
+#' Y_mat_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |> construct_replicate_count_table()
 #' hyperparam_out <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl, c_grid = c(5, 25), lambda_grid = c(5, 50))
+#'
+#' # with p-value boosting and filtering on homology
+#' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
+#' count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+#' dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2, chr != "chrM")
+#' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+#' n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
+#' annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
+#'   annotate_clustered_count_df_with_homology(homology_df = homology_df, n_run_df = n_run_df) |>
+#'   dplyr::filter(homology_has_hit)
+#' annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
+#'   annotate_clustered_count_df_with_homology(homology_df = homology_df, n_run_df = n_run_df) |>
+#'   dplyr::filter(homology_has_hit)
+#' Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt)
+#' Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntrl)
+#' hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
+#'   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
+#'   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
+#'
 tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25, 50, 100),
-                                 lambda_grid = c(0, 5, 10, 20, 50, 100, 500), multiplicity_alpha = 0.2, max_false_discs = 1L) {
+                                 lambda_grid = c(0, 5, 10, 20, 50, 100, 500), multiplicity_alpha = 0.1,
+                                 max_false_discs = 1L, annotated_clustered_count_df_trt = NULL,
+                                 annotated_clustered_count_df_cntrl = NULL) {
+  if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
+      (!is.null(annotated_clustered_count_df_trt) && is.null(annotated_clustered_count_df_cntrl))) {
+    stop("`annotated_clustered_count_df_trt` and `annotated_clustered_count_df_cntrl` must both be NULL or supplied.")
+  }
+
   condition_grid <- c("trt", "cntrl")
   grid <- expand.grid(c = c_grid, lambda = lambda_grid, condition = condition_grid)
 
@@ -439,16 +467,25 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25
     curr_condition <- as.character(curr_row$condition)
     curr_c <- curr_row$c
     curr_lambda <- curr_row$lambda
-    curr_Y_mat <- if (curr_condition == "trt") Y_mat_trt else Y_mat_cntrl
-
+    if (curr_condition == "trt") {
+       curr_Y_mat <- Y_mat_trt
+       annotated_clustered_count_df <- annotated_clustered_count_df_trt
+    } else {
+      curr_Y_mat <- Y_mat_cntrl
+      annotated_clustered_count_df <- annotated_clustered_count_df_cntrl
+    }
     fit_res <- run_multireplicate_guideseq_method(Y_mat = curr_Y_mat, incorporate_occupancy_info = TRUE, robust_fit = TRUE,
                                                   lambda = curr_lambda, c_tukey_beta = curr_c, c_tukey_sigma = curr_c,
-                                                  multiplicity_alpha = multiplicity_alpha)
+                                                  multiplicity_alpha = multiplicity_alpha,
+                                                  annotated_clustered_count_df = annotated_clustered_count_df)
+    if (!is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
+      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese(multiplicity_alpha = multiplicity_alpha)
+    }
     list(params = curr_row, res = fit_res)
   }
-  mc_cores <- max(1L, parallel::detectCores() - 1L)
 
   # apply method to analyze data
+  mc_cores <- max(1L, parallel::detectCores() - 1L)
   grid_results <- parallel::mclapply(
     X = seq_len(nrow(grid)),
     FUN = run_one_grid_row,
@@ -507,10 +544,31 @@ load_crispritz_output <- function(targets_file_path) {
   return(df)
 }
 
+
+#' Load N run bed file
+#'
+#' Load bed file storing the positions of N-runs in the reference genome.
+#'
+#' @param n_run_bed_file_path path to N-run bed file
+#'
+#' @returns a data frame storing the positions of the N-runs
+#' @export
+#'
+#' @examples
+#' n_run_bed_file_path <- "/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed"
+#' n_run_df <- load_n_run_bed(n_run_bed_file_path)
+load_n_run_bed <- function(n_run_bed_file_path) {
+  df <- readr::read_delim(file = n_run_bed_file_path, col_names = FALSE)
+  colnames(df) <- c("chromosome", "start", "end", "feature", "score", "strand")
+  df |> dplyr::mutate(start = start + 1L)
+}
+
+
 #' Annotate clustered count df with homology
 #'
 #' Add colummns:
 #' - `homology_has_hit` (indicating whether there is a homology hit inside the window)
+#' - `overlaps_n_run` (indicating whether the window overlaps an N-run in the reference genome)
 #' - `homology_n_mismatches` (indicating the number of mismatches between aligned spacer and protospacer sequence)
 #' - `homology_n_bulges` (indicating number of bulges between aligned spacer and protospacer sequence)
 #' - `homology_posit` (indicating the position of the start of the protospacer)
@@ -519,19 +577,22 @@ load_crispritz_output <- function(targets_file_path) {
 #' - `homology_gRNA` (aligned spacer sequence)
 #'
 #' @param clustered_count_df output of `cluster_loci()`
-#' @param homology_df output of `load_crispritz_output()`
+#' @param homology_df optional output of `load_crispritz_output()`; if supplied, windows are annotated for overlap with CRISPRitz hits
+#' @param n_run_df optional output of `load_n_run_bed()`; if supplied, windows are annotated for overlap with N-runs
 #'
 #' @examples
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+#' n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 #' clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 #' dplyr::filter(treated & cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2 & chr != "chrM") |>
 #' dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 #' cluster_loci()
 #'
-#' annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df)
+#' annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df, n_run_df)
+#'
 #' @export
-annotate_clustered_count_df_with_homology <- function(clustered_count_df, homology_df) {
+annotate_clustered_count_df_with_homology <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL) {
   unique_cluster_df <- clustered_count_df |>
     dplyr::select(chr = cluster_chr, start = min_cluster_coord, end = max_cluster_coord, window = window) |>
     dplyr::distinct()
@@ -543,28 +604,44 @@ annotate_clustered_count_df_with_homology <- function(clustered_count_df, homolo
   )
   S4Vectors::mcols(cluster_gr) <- unique_cluster_df |> dplyr::select(window)
 
-  # initialze granges object for homology df
-  homology_gr <- GenomicRanges::GRanges(
-    seqnames = homology_df$chromosome,
-    ranges = IRanges::IRanges(
-      start = homology_df$posit + 1L + ifelse(homology_df$strand == "-", 3L, 0L),
-      width = homology_df$protospacer_width),
-    strand = homology_df$strand)
-  S4Vectors::mcols(homology_gr) <- homology_df
-
-  # find overlaps
-  hits <- GenomicRanges::findOverlaps(query = cluster_gr,
-                                      subject = homology_gr,
-                                      ignore.strand = TRUE)
-
   # add columns to the cluster df related to homology
   cluster_df_new <- unique_cluster_df |>
     dplyr::mutate(homology_has_hit = FALSE, homology_n_mismatches = NA_real_,
                   homology_n_bulges = NA_real_, homology_posit = NA_real_,
                   homology_strand = NA_character_, homology_dna = NA_character_,
-                  homology_gRNA = NA_character_, homology_protospacer_width = NA_integer_)
+                  homology_gRNA = NA_character_, homology_protospacer_width = NA_integer_,
+                  overlaps_n_run = FALSE)
 
-  if (length(hits) > 0L) {
+  if (!is.null(n_run_df)) {
+    n_run_gr <- GenomicRanges::GRanges(
+      seqnames = n_run_df$chromosome,
+      ranges = IRanges::IRanges(start = n_run_df$start, end = n_run_df$end)
+    )
+    n_run_hits <- GenomicRanges::findOverlaps(query = cluster_gr,
+                                              subject = n_run_gr,
+                                              ignore.strand = TRUE)
+    cluster_df_new$overlaps_n_run[S4Vectors::queryHits(n_run_hits)] <- TRUE
+  }
+
+  if (!is.null(homology_df)) {
+    # initialze granges object for homology df
+    homology_gr <- GenomicRanges::GRanges(
+      seqnames = homology_df$chromosome,
+      ranges = IRanges::IRanges(
+        start = homology_df$posit + 1L + ifelse(homology_df$strand == "-", 3L, 0L),
+        width = homology_df$protospacer_width),
+      strand = homology_df$strand)
+    S4Vectors::mcols(homology_gr) <- homology_df
+
+    # find overlaps
+    hits <- GenomicRanges::findOverlaps(query = cluster_gr,
+                                        subject = homology_gr,
+                                        ignore.strand = TRUE)
+  } else {
+    hits <- NULL
+  }
+
+  if (!is.null(hits) && length(hits) > 0L) {
     hit_df <- data.frame(
       cluster_idx = S4Vectors::queryHits(hits),
       homology_idx = S4Vectors::subjectHits(hits)) |>
@@ -621,7 +698,7 @@ annotate_clustered_count_df_with_homology <- function(clustered_count_df, homolo
   cluster_df_new_w_cut_w_modal <- dplyr::left_join(cluster_df_new_w_cut,
                                                    modal_base_df_w_d, by = "window") |>
     dplyr::select(-chr, -start, -end, -homology_protospacer_width) |>
-    dplyr::relocate(window, homology_has_hit, homology_n_mismatches, homology_n_bulges, homology_modal_base_cut_distance)
+    dplyr::relocate(window, homology_has_hit, overlaps_n_run, homology_n_mismatches, homology_n_bulges, homology_modal_base_cut_distance)
 
   out <- dplyr::left_join(clustered_count_df, cluster_df_new_w_cut_w_modal, by = "window")
   return(out)

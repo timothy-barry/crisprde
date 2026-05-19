@@ -14,9 +14,22 @@ plot_read_processing_results(
 \item{qc_df}{the output of \code{run_read_qc_on_sample()}}
 
 \item{plot_type}{type of plot, either "paired_end", "r2", or "combined"}
+
+\item{normalize_counts}{logical indicating whether to normalize each sample's
+displayed categories to sum to one.}
+}
+\value{
+a \code{ggplot2} stacked bar plot.
 }
 \description{
 Plot read processing results
+}
+\details{
+The read-processing plots use the disjoint QC categories returned by
+\code{run_read_qc_on_sample()}. Multimappers are shown as separate discarded and
+retained categories. The retained multimapper category corresponds to
+exact-tie multimappers that passed the pipeline's post-alignment QC when
+multimapper retention was enabled.
 }
 \examples{
 sample_dirs <- paste0("/Users/timbarry/research_code/genethoff-nf/demo/results/",

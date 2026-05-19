@@ -9,8 +9,10 @@ tune_hyperparameters(
   Y_mat_cntrl,
   c_grid = c(1, 5, 10, 25, 50, 100),
   lambda_grid = c(0, 5, 10, 20, 50, 100, 500),
-  multiplicity_alpha = 0.2,
-  max_false_discs = 1L
+  multiplicity_alpha = 0.1,
+  max_false_discs = 1L,
+  annotated_clustered_count_df_trt = NULL,
+  annotated_clustered_count_df_cntrl = NULL
 )
 }
 \arguments{
@@ -25,6 +27,10 @@ tune_hyperparameters(
 \item{multiplicity_alpha}{nominal fdr}
 
 \item{max_false_discs}{maximum false discoveries permitted in the control condition}
+
+\item{annotated_clustered_count_df_trt}{optional annotated clustered count data frame for the treated condition; if supplied along with \code{annotated_clustered_count_df_cntrl}, Genovese p-value boosting is used}
+
+\item{annotated_clustered_count_df_cntrl}{optional annotated clustered count data frame for the control condition; if supplied along with \code{annotated_clustered_count_df_trt}, Genovese p-value boosting is used}
 }
 \value{
 a list with elements \code{selected_params}, \code{selected_trt_run}, \code{selected_cntrl_run}, \code{grid_results}
@@ -33,11 +39,30 @@ a list with elements \code{selected_params}, \code{selected_trt_run}, \code{sele
 Tune hyperparameters
 }
 \examples{
+# basic
 elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2, chr != "chrM")
 Y_mat_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
-Y_mat_cntrl <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
-
+Y_mat_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |> construct_replicate_count_table()
 hyperparam_out <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl, c_grid = c(5, 25), lambda_grid = c(5, 50))
+
+# with p-value boosting and filtering on homology
+elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
+count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2, chr != "chrM")
+homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
+annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
+  annotate_clustered_count_df_with_homology(homology_df = homology_df, n_run_df = n_run_df) |>
+  dplyr::filter(homology_has_hit)
+annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
+  annotate_clustered_count_df_with_homology(homology_df = homology_df, n_run_df = n_run_df) |>
+  dplyr::filter(homology_has_hit)
+Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt)
+Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntrl)
+hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
+  annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
+  annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
+
 }

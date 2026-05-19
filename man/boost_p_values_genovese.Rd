@@ -34,5 +34,5 @@ annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(cluste
 Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
 augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
 weighted_result_df <- boost_p_values_genovese(augmented_result_df)
-qq_plot <- weighted_result_df |> dplyr::mutate(p_value = p_value_weighted) |> make_guideseq_qq_plot()
+qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
 }
