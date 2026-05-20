@@ -339,7 +339,7 @@ get_p_value_given_test_stat_prob_vector <- function(test_stat, right_tail_prob_v
 #'  dplyr::filter(chr != "chrM") |>
 #'  dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id)
 #' clustered_count_df <- cluster_loci(count_df)
-cluster_loci <- function(count_df, thresh = 100L, padding = 25L) {
+cluster_loci <- function(count_df, thresh = 100L, padding = 35L) {
   # 1. simple distance
   count_df_w_dist <- count_df |>
     dplyr::group_by(chr) |>
