@@ -149,6 +149,10 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 }
 
 
+fit_occupancy_model <- function() {
+
+}
+
 #' Run multivariate guide-seq method
 #'
 #' Runs the multivariate guide-seq method on a replicate-by-window matrix of counts
@@ -188,8 +192,9 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 #' n_total_nominations <- sum(res_df$nominated_window)
 #' fdp <- (n_total_nominations - n_correct_nominations)/n_total_nominations
 run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE,
-                                               multiplicity_alpha = 0.1, lambda = NULL, c_tukey_beta = 5,
-                                               c_tukey_sigma = 5, robust_fit = TRUE, annotated_clustered_count_df = NULL) {
+                                               multiplicity_alpha = 0.1, lambda = 20,
+                                               c_tukey_beta = 5, c_tukey_sigma = 5,
+                                               robust_fit = TRUE, annotated_clustered_count_df = NULL) {
   MIN_NONZERO_COUNT <- 25L
   if (is.null(colnames(Y_mat))) warning("Y_mat must have column names (to identify the windows).")
   X <- Y_mat > 0
@@ -208,11 +213,7 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
   if (incorporate_occupancy_info) {
     pi_hat <- fit_tbp_model(X)
     if (!is.null(pi_hat)) {
-      # get pmf of fitted tbp distribution
       tbp_pattern_df <- pmf_tbp(pi_hat)
-      if (is.null(lambda)) {
-        lambda <- -median(colSums(Y_mat) - colSums(X))/(sum(log(pi_hat)))
-      }
     } else {
       warning("Cannot fit occupancy model; defaulting to count-only model.")
       incorporate_occupancy_info <- FALSE
@@ -449,10 +450,10 @@ construct_replicate_count_table <- function(clustered_count_df) {
 #'   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
 #'   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
 #'
-tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25, 50, 100),
-                                 lambda_grid = c(0, 5, 10, 20, 50, 100, 500), multiplicity_alpha = 0.1,
+tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 50, 100),
+                                 lambda_grid = c(0, 10, 25, 50, 100), multiplicity_alpha = 0.1,
                                  max_false_discs = 1L, annotated_clustered_count_df_trt = NULL,
-                                 annotated_clustered_count_df_cntrl = NULL) {
+                                 annotated_clustered_count_df_cntrl = NULL, parallel = TRUE, mc_cores = NULL) {
   if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
       (!is.null(annotated_clustered_count_df_trt) && is.null(annotated_clustered_count_df_cntrl))) {
     stop("`annotated_clustered_count_df_trt` and `annotated_clustered_count_df_cntrl` must both be NULL or supplied.")
@@ -464,6 +465,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25
   # helper function to run method on one parameter configuration
   run_one_grid_row <- function(i) {
     curr_row <- grid[i, , drop = FALSE]
+    print(curr_row)
     curr_condition <- as.character(curr_row$condition)
     curr_c <- curr_row$c
     curr_lambda <- curr_row$lambda
@@ -474,10 +476,15 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25
       curr_Y_mat <- Y_mat_cntrl
       annotated_clustered_count_df <- annotated_clustered_count_df_cntrl
     }
-    fit_res <- run_multireplicate_guideseq_method(Y_mat = curr_Y_mat, incorporate_occupancy_info = TRUE, robust_fit = TRUE,
-                                                  lambda = curr_lambda, c_tukey_beta = curr_c, c_tukey_sigma = curr_c,
+    fit_res <- run_multireplicate_guideseq_method(Y_mat = curr_Y_mat,
+                                                  incorporate_occupancy_info = TRUE,
+                                                  robust_fit = TRUE,
+                                                  lambda = curr_lambda,
+                                                  c_tukey_beta = curr_c,
+                                                  c_tukey_sigma = curr_c,
                                                   multiplicity_alpha = multiplicity_alpha,
-                                                  annotated_clustered_count_df = annotated_clustered_count_df)
+                                                  annotated_clustered_count_df =
+                                                  annotated_clustered_count_df)
     if (!is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
       fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese(multiplicity_alpha = multiplicity_alpha)
     }
@@ -485,12 +492,14 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(1, 5, 10, 25
   }
 
   # apply method to analyze data
-  mc_cores <- max(1L, parallel::detectCores() - 1L)
-  grid_results <- parallel::mclapply(
-    X = seq_len(nrow(grid)),
-    FUN = run_one_grid_row,
-    mc.cores = mc_cores
-  )
+  if (parallel) {
+    if (is.null(mc_cores)) mc_cores <- max(1L, parallel::detectCores() - 1L)
+    grid_results <- parallel::mclapply(X = seq_len(nrow(grid)),
+                                       FUN = run_one_grid_row,
+                                       mc.cores = mc_cores)
+  } else {
+    grid_results <- lapply(X = seq_len(nrow(grid)), FUN = run_one_grid_row)
+  }
 
   summary_df <- lapply(X = grid_results, FUN = function(curr_res) {
     curr_res$params |>
