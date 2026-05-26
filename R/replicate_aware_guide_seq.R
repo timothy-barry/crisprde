@@ -149,9 +149,160 @@ simulate_multirep_guideseq_data <- function(pi, mu_vect, theta_vect, m) {
 }
 
 
-fit_occupancy_model <- function() {
+fit_multirep_guideseq_occupancy <- function(Y_mat, incorporate_occupancy_info = TRUE) {
+  MIN_NONZERO_COUNT <- 25L
+  if (is.null(colnames(Y_mat))) warning("Y_mat must have column names (to identify the windows).")
+  X <- Y_mat > 0
+  storage.mode(X) <- "integer"
 
+  nonzero_replicate_count <- rowSums(X)
+  if (any(nonzero_replicate_count <= MIN_NONZERO_COUNT)) {
+    offending_rows <- paste0(which(nonzero_replicate_count <= MIN_NONZERO_COUNT), collapse = ", ")
+    msg <- paste0("Row ",  offending_rows, " has fewer than ", MIN_NONZERO_COUNT, " windows with a nonzero count. Consider dropping this sample or combining this sample with another (e.g., by pooling together primer chanels within a replicate).")
+    warning(msg)
+  }
+
+  Omega <- as.matrix(generate_omega(nrow(Y_mat)))
+  col_keys <- apply(X, 2, paste0, collapse = "")
+  pi_hat <- NULL
+  tbp_pattern_df <- NULL
+  occupancy_pattern_map <- NULL
+
+  if (incorporate_occupancy_info) {
+    pi_hat <- fit_tbp_model(X)
+    if (!is.null(pi_hat)) {
+      tbp_pattern_df <- pmf_tbp(pi_hat)
+    } else {
+      warning("Cannot fit occupancy model; defaulting to count-only model.")
+      incorporate_occupancy_info <- FALSE
+    }
+  }
+  omega_keys <- apply(Omega, 1, paste0, collapse = "")
+  occupancy_pattern_map <- match(col_keys, omega_keys)
+
+  ret <- list(X = X,
+              Omega = Omega,
+              col_keys = col_keys,
+              incorporate_occupancy_info = incorporate_occupancy_info,
+              pi_hat = pi_hat,
+              tbp_pattern_df = tbp_pattern_df,
+              occupancy_pattern_map = occupancy_pattern_map)
+  return(ret)
 }
+
+fit_multirep_guideseq_count_null <- function(Y_mat, occupancy_fit, c_tukey_beta = 5,
+                                             c_tukey_sigma = 5, robust_fit = TRUE) {
+  mu_theta_hat_mat <- apply(X = Y_mat, MARGIN = 1, FUN = function(curr_row) {
+    y_plus <- curr_row[curr_row > 0]
+    if (robust_fit) {
+      fit <- fit_rob_nb_univariate(y = y_plus - 1, c.tukey.beta = c_tukey_beta, c.tukey.sigma = c_tukey_sigma)
+    } else {
+      fit <- fit_nb_univariate(y = y_plus - 1)
+    }
+    fit[c("mu", "theta")]
+  }) |> t()
+
+  pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
+    max_count <- qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
+    dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
+  }, simplify = FALSE)
+
+  conv_pmf_list <- apply(X = occupancy_fit$Omega, MARGIN = 1, FUN = function(curr_row) {
+    convolve_pmf_list(pmf_list[as.logical(curr_row)])
+  }, simplify = FALSE)
+  right_tail_prob_list <- lapply(X = conv_pmf_list, FUN = function(curr_pmf) {
+    rev(cumsum(rev(curr_pmf)))
+  })
+
+  ret <- list(mu_theta_hat_mat = mu_theta_hat_mat,
+              right_tail_prob_list = right_tail_prob_list)
+  return(ret)
+}
+
+
+get_p_values_given_test_stats_prob_vector <- function(test_stat_v_in, right_tail_prob_v_in) {
+  p_vals <- numeric(length(test_stat_v_in))
+  neg_idx <- which(test_stat_v_in < 0)
+  ok_idx <- which(test_stat_v_in >= 0)
+  p_vals[neg_idx] <- 1
+  tail_idx <- as.integer(test_stat_v_in[ok_idx]) + 1L
+  too_large <- tail_idx > length(right_tail_prob_v_in)
+  p_vals[ok_idx[too_large]] <- right_tail_prob_v_in[length(right_tail_prob_v_in)]
+  p_vals[ok_idx[!too_large]] <- right_tail_prob_v_in[tail_idx[!too_large]]
+  return(p_vals)
+}
+
+
+score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, count_fit, lambda = 20,
+                                        multiplicity_alpha = 0.1, annotated_clustered_count_df = NULL) {
+  # unpack items
+  X <- occupancy_fit$X
+  Omega <- occupancy_fit$Omega
+  col_keys <- occupancy_fit$col_keys
+  incorporate_occupancy_info <- occupancy_fit$incorporate_occupancy_info
+  right_tail_prob_list <- count_fit$right_tail_prob_list
+  occupancy_pattern_map <- occupancy_fit$occupancy_pattern_map
+
+  # compute total UMI count and initialize p-value vector
+  total_umi_counts <- colSums(Y_mat)
+  occupancy_counts <- colSums(X)
+
+  # iterate over occupancy patterns
+  if (!incorporate_occupancy_info) {
+    # no occupancy info
+    p_vals <- numeric(length = length(total_umi_counts))
+    test_stats <- total_umi_counts - occupancy_counts
+    for (i in seq_along(right_tail_prob_list)) {
+      idxs <- which(occupancy_pattern_map == i)
+      p_vals[idxs] <- get_p_values_given_test_stats_prob_vector(
+        test_stat_v_in = test_stats[idxs],
+        right_tail_prob_v_in = right_tail_prob_list[[i]]
+      )
+    }
+  } else {
+    # with occupancy info -- mixture over the occupancy patterns
+    log_pi_hat <- log(occupancy_fit$pi_hat)
+    window_log_pi_sum <- as.numeric(crossprod(log_pi_hat, X))
+    pattern_log_pi_sum <- as.numeric(Omega %*% log_pi_hat)
+    test_stats <- (total_umi_counts - occupancy_counts) - lambda * window_log_pi_sum
+    l <- sapply(X = seq_along(right_tail_prob_list), FUN = function(i) {
+      sum_start <- ceiling(test_stats + lambda * pattern_log_pi_sum[i])
+      nb_piece <- get_p_values_given_test_stats_prob_vector(
+        test_stat_v_in = sum_start,
+        right_tail_prob_v_in = right_tail_prob_list[[i]]
+      )
+      occupancy_fit$tbp_pattern_df$pmf[i] * nb_piece
+    }, simplify = FALSE)
+    p_vals <- Reduce(f = "+", x = l)
+  }
+
+  ##### SECOND PART OF FUNCTION
+  p_vals <- pmin(1, p_vals)
+  q_vals <- p.adjust(p = p_vals, method = "BH")
+  nominated_window <- (q_vals < multiplicity_alpha)
+  lambda_out <- if (incorporate_occupancy_info) lambda else NA
+
+  res_df <- data.frame(window = colnames(Y_mat),
+                       p_value = p_vals,
+                       test_stat = test_stats,
+                       nominated_window = nominated_window,
+                       umi_count = total_umi_counts,
+                       lambda = lambda_out,
+                       occupancy_pattern = col_keys) |> dplyr::arrange(p_value)
+  rownames(res_df) <- NULL
+  if (!is.null(annotated_clustered_count_df)) {
+    right_df <- annotated_clustered_count_df |>
+      dplyr::select(window, starts_with("homology")) |>
+      dplyr::filter(window %in% res_df$window) |>
+      dplyr::distinct()
+    res_df <- dplyr::left_join(res_df, right_df, by = "window")
+  }
+  ests_list <- list(mu_theta_hat_mat = count_fit$mu_theta_hat_mat)
+  if (incorporate_occupancy_info) ests_list$pi_hat <- occupancy_fit$pi_hat
+  ret <- list(res_df = res_df, ests_list = ests_list)
+  return(ret)
+}
+
 
 #' Run multivariate guide-seq method
 #'
@@ -195,126 +346,20 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
                                                multiplicity_alpha = 0.1, lambda = 20,
                                                c_tukey_beta = 5, c_tukey_sigma = 5,
                                                robust_fit = TRUE, annotated_clustered_count_df = NULL) {
-  MIN_NONZERO_COUNT <- 25L
-  if (is.null(colnames(Y_mat))) warning("Y_mat must have column names (to identify the windows).")
-  X <- Y_mat > 0
-  storage.mode(X) <- "integer"
-
-  # check for replicates with low counts
-  nonzero_replicate_count <- rowSums(X)
-  if (any(nonzero_replicate_count <= MIN_NONZERO_COUNT)) {
-    offending_rows <- paste0(which(nonzero_replicate_count <= MIN_NONZERO_COUNT), collapse = ", ")
-    msg <- paste0("Row ",  offending_rows, " has fewer than ", MIN_NONZERO_COUNT, " windows with a nonzero count. Consider dropping this sample or combining this sample with another (e.g., by pooling together primer chanels within a replicate).")
-    warning(msg)
-  }
-
-  # 1. fit occupancy model and compute marginal occupancy probabilities
-  Omega <- as.matrix(generate_omega(nrow(Y_mat)))
-  if (incorporate_occupancy_info) {
-    pi_hat <- fit_tbp_model(X)
-    if (!is.null(pi_hat)) {
-      tbp_pattern_df <- pmf_tbp(pi_hat)
-    } else {
-      warning("Cannot fit occupancy model; defaulting to count-only model.")
-      incorporate_occupancy_info <- FALSE
-    }
-  }
-  col_keys <- apply(X, 2, paste0, collapse = "")
-  if (!incorporate_occupancy_info) {
-    omega_keys <- apply(Omega, 1, paste0, collapse = "")
-    occupancy_pattern_map <- match(col_keys, omega_keys)
-    lambda <- NA
-  }
-
-  # 2. compute shifted NB models and compute convolved pms and cdfs over all combinations
-  mu_theta_hat_mat <- apply(X = Y_mat, MARGIN = 1, FUN = function(curr_row) {
-    y_plus <- curr_row[curr_row > 0]
-    if (robust_fit) {
-      fit <- fit_rob_nb_univariate(y = y_plus - 1, c.tukey.beta = c_tukey_beta, c.tukey.sigma = c_tukey_sigma)
-    } else {
-      fit <- fit_nb_univariate(y = y_plus - 1)
-    }
-    fit[c("mu", "theta")]
-  }) |> t()
-  # generate pmfs
-  pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
-    max_count <- qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
-    dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
-  }, simplify = FALSE)
-  # compute all convolution combinations
-  conv_pmf_list <- apply(X = Omega, MARGIN = 1, FUN = function(curr_row) {
-    convolve_pmf_list(pmf_list[as.logical(curr_row)])
-  }, simplify = FALSE)
-  # compute right-tail probability list
-  right_tail_prob_list <- lapply(X = conv_pmf_list, FUN = function(curr_pmf) {
-    rev(cumsum(rev(curr_pmf)))
-  })
-
-  # 3. compute the p-value for each window
-  p_val_and_test_stat_mat <- sapply(X = seq_len(ncol(Y_mat)), FUN = function(j) {
-    y <- Y_mat[,j]
-    total_umi_count <- sum(y)
-    if (!incorporate_occupancy_info) {
-      occupancy_pattern_idx <- occupancy_pattern_map[j]
-      test_stat <- total_umi_count - sum(X[,j])
-      right_tail_prob_vector <- right_tail_prob_list[[occupancy_pattern_idx]]
-      p_val <- get_p_value_given_test_stat_prob_vector(test_stat, right_tail_prob_vector)
-    } else {
-      # compute test stat
-      test_stat <- (total_umi_count - sum(X[,j])) - lambda * sum(X[,j] * log(pi_hat))
-      p_val <- sapply(X = seq_len(nrow(tbp_pattern_df)), FUN = function(i) {
-        curr_pmf <- right_tail_prob_list[[i]]
-        sum_start <- ceiling(test_stat + lambda * sum(Omega[i,] * log(pi_hat)))
-        nb_piece <- get_p_value_given_test_stat_prob_vector(test_stat = sum_start,
-                                                            right_tail_prob_vector = curr_pmf)
-        tbp_piece <- tbp_pattern_df$pmf[i]
-        return(tbp_piece * nb_piece)
-      }) |> sum()
-    }
-    return(c(test_stat, p_val))
-  }) |> t()
-
-  # 4. multiplicity correction
-  test_stats <- p_val_and_test_stat_mat[,1]
-  p_vals <- pmin(1, p_val_and_test_stat_mat[,2])
-  q_vals <- p.adjust(p = p_vals, method = "BH")
-  umi_counts <- colSums(Y_mat)
-  nominated_window <- (q_vals < multiplicity_alpha)
-
-  res_df <- data.frame(window = colnames(Y_mat),
-                       p_value = p_vals,
-                       test_stat = test_stats,
-                       nominated_window = nominated_window,
-                       umi_count = umi_counts,
-                       lambda = lambda,
-                       occupancy_pattern = col_keys) |> dplyr::arrange(p_value)
-  rownames(res_df) <- NULL
-  if (!is.null(annotated_clustered_count_df)) { # if annotated_clustered_count_df supplied, join with the results
-    right_df <- annotated_clustered_count_df |>
-      dplyr::select(window, starts_with("homology")) |>
-      dplyr::filter(window %in% res_df$window) |>
-      dplyr::distinct()
-    res_df <- dplyr::left_join(res_df, right_df, by = "window")
-  }
-  ests_list <- list(mu_theta_hat_mat = mu_theta_hat_mat)
-  if (incorporate_occupancy_info) ests_list$pi_hat <- pi_hat
-  ret <- list(res_df = res_df, ests_list = ests_list)
+  occupancy_fit <- fit_multirep_guideseq_occupancy(Y_mat = Y_mat,
+                                                   incorporate_occupancy_info = incorporate_occupancy_info)
+  count_fit <- fit_multirep_guideseq_count_null(Y_mat = Y_mat,
+                                                occupancy_fit = occupancy_fit,
+                                                c_tukey_beta = c_tukey_beta,
+                                                c_tukey_sigma = c_tukey_sigma,
+                                                robust_fit = robust_fit)
+  ret <- score_multirep_guideseq_fit(Y_mat = Y_mat,
+                                     occupancy_fit = occupancy_fit,
+                                     count_fit = count_fit,
+                                     lambda = lambda,
+                                     multiplicity_alpha = multiplicity_alpha,
+                                     annotated_clustered_count_df = annotated_clustered_count_df)
   return(ret)
-}
-
-
-get_p_value_given_test_stat_prob_vector <- function(test_stat, right_tail_prob_vector) {
-  if (test_stat < 0) {
-    p_val <- 1
-  } else {
-    idx <- test_stat + 1L
-    if (idx > length(right_tail_prob_vector)) {
-      p_val <- right_tail_prob_vector[length(right_tail_prob_vector)]
-    } else {
-      p_val <- right_tail_prob_vector[idx]
-    }
-  }
-  return(p_val)
 }
 
 
@@ -415,6 +460,7 @@ construct_replicate_count_table <- function(clustered_count_df) {
 #' @param Y_mat_cntrl control count matrix
 #' @param c_grid robust hyperparm grid
 #' @param lambda_grid lambda grid
+#' @param incorporate_occupancy_info a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation
 #' @param multiplicity_alpha nominal fdr
 #' @param max_false_discs maximum false discoveries permitted in the control condition
 #' @param annotated_clustered_count_df_trt optional annotated clustered count data frame for the treated condition; if supplied along with `annotated_clustered_count_df_cntrl`, Genovese p-value boosting is used
@@ -451,9 +497,11 @@ construct_replicate_count_table <- function(clustered_count_df) {
 #'   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
 #'
 tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 50, 100),
-                                 lambda_grid = c(0, 10, 25, 50, 100), multiplicity_alpha = 0.1,
-                                 max_false_discs = 1L, annotated_clustered_count_df_trt = NULL,
-                                 annotated_clustered_count_df_cntrl = NULL, parallel = TRUE, mc_cores = NULL) {
+                                 lambda_grid = c(0, 10, 25, 50, 100),
+                                 incorporate_occupancy_info = TRUE,
+                                 multiplicity_alpha = 0.1, max_false_discs = 2L,
+                                 annotated_clustered_count_df_trt = NULL,
+                                 annotated_clustered_count_df_cntrl = NULL) {
   if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
       (!is.null(annotated_clustered_count_df_trt) && is.null(annotated_clustered_count_df_cntrl))) {
     stop("`annotated_clustered_count_df_trt` and `annotated_clustered_count_df_cntrl` must both be NULL or supplied.")
@@ -462,45 +510,60 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 5
   condition_grid <- c("trt", "cntrl")
   grid <- expand.grid(c = c_grid, lambda = lambda_grid, condition = condition_grid)
 
-  # helper function to run method on one parameter configuration
-  run_one_grid_row <- function(i) {
-    curr_row <- grid[i, , drop = FALSE]
-    print(curr_row)
+  Y_mat_list <- list(trt = Y_mat_trt, cntrl = Y_mat_cntrl)
+  annotated_clustered_count_df_list <- list(trt = annotated_clustered_count_df_trt,
+                                            cntrl = annotated_clustered_count_df_cntrl)
+  occupancy_fit_list <- lapply(X = condition_grid, FUN = function(curr_condition) {
+    fit_multirep_guideseq_occupancy(Y_mat = Y_mat_list[[curr_condition]],
+                                    incorporate_occupancy_info = incorporate_occupancy_info)
+  }) |> setNames(condition_grid)
+
+  fit_grid <- expand.grid(c = c_grid, condition = condition_grid)
+  fit_one_count_null <- function(i) {
+    print(paste0("Fitting NB model ", i, " of ", nrow(fit_grid)))
+    curr_row <- fit_grid[i, , drop = FALSE]
     curr_condition <- as.character(curr_row$condition)
-    curr_c <- curr_row$c
-    curr_lambda <- curr_row$lambda
+    curr_c <- curr_row$c[[1]]
+    fit <- fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]],
+                                            occupancy_fit = occupancy_fit_list[[curr_condition]],
+                                            c_tukey_beta = curr_c,
+                                            c_tukey_sigma = curr_c,
+                                            robust_fit = TRUE)
+    list(params = curr_row, count_fit = fit)
+  }
+
+  count_fit_list <- lapply(X = seq_len(nrow(fit_grid)), FUN = fit_one_count_null)
+  count_fit_names <- sapply(count_fit_list, FUN = function(curr_fit) {
+    paste(as.character(curr_fit$params$condition), curr_fit$params$c[[1]], sep = "_")
+  })
+  names(count_fit_list) <- count_fit_names
+
+  score_one_grid_row <- function(i) {
+    print(paste0("Scoring ", i, " of ", nrow(grid)))
+    curr_row <- grid[i, , drop = FALSE]
+    curr_condition <- as.character(curr_row$condition)
+    curr_c <- curr_row$c[[1]]
+    curr_lambda <- curr_row$lambda[[1]]
+    count_fit <- count_fit_list[[paste(curr_condition, curr_c, sep = "_")]]$count_fit
     if (curr_condition == "trt") {
-       curr_Y_mat <- Y_mat_trt
-       annotated_clustered_count_df <- annotated_clustered_count_df_trt
+      curr_Y_mat <- Y_mat_trt
     } else {
       curr_Y_mat <- Y_mat_cntrl
-      annotated_clustered_count_df <- annotated_clustered_count_df_cntrl
     }
-    fit_res <- run_multireplicate_guideseq_method(Y_mat = curr_Y_mat,
-                                                  incorporate_occupancy_info = TRUE,
-                                                  robust_fit = TRUE,
-                                                  lambda = curr_lambda,
-                                                  c_tukey_beta = curr_c,
-                                                  c_tukey_sigma = curr_c,
-                                                  multiplicity_alpha = multiplicity_alpha,
-                                                  annotated_clustered_count_df =
-                                                  annotated_clustered_count_df)
+    annotated_clustered_count_df <- annotated_clustered_count_df_list[[curr_condition]]
+    fit_res <- score_multirep_guideseq_fit(Y_mat = curr_Y_mat,
+                                           occupancy_fit = occupancy_fit_list[[curr_condition]],
+                                           count_fit = count_fit,
+                                           lambda = curr_lambda,
+                                           multiplicity_alpha = multiplicity_alpha,
+                                           annotated_clustered_count_df = annotated_clustered_count_df)
     if (!is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
       fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese(multiplicity_alpha = multiplicity_alpha)
     }
     list(params = curr_row, res = fit_res)
   }
 
-  # apply method to analyze data
-  if (parallel) {
-    if (is.null(mc_cores)) mc_cores <- max(1L, parallel::detectCores() - 1L)
-    grid_results <- parallel::mclapply(X = seq_len(nrow(grid)),
-                                       FUN = run_one_grid_row,
-                                       mc.cores = mc_cores)
-  } else {
-    grid_results <- lapply(X = seq_len(nrow(grid)), FUN = run_one_grid_row)
-  }
-
+  grid_results <- lapply(X = seq_len(nrow(grid)), FUN = score_one_grid_row)
   summary_df <- lapply(X = grid_results, FUN = function(curr_res) {
     curr_res$params |>
       dplyr::mutate(n_discoveries = sum(curr_res$res$res_df$nominated_window))

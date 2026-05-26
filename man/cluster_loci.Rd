@@ -4,7 +4,7 @@
 \alias{cluster_loci}
 \title{Cluster loci}
 \usage{
-cluster_loci(count_df, thresh = 100L, padding = 25L)
+cluster_loci(count_df, thresh = 100L, padding = 35L)
 }
 \arguments{
 \item{count_df}{a data frame containing columns chr, coord}

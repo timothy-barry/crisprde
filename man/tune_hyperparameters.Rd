@@ -7,10 +7,11 @@
 tune_hyperparameters(
   Y_mat_trt,
   Y_mat_cntrl,
-  c_grid = c(1, 5, 10, 25, 50, 100),
-  lambda_grid = c(0, 5, 10, 20, 50, 100, 500),
+  c_grid = c(5, 10, 25, 50, 100),
+  lambda_grid = c(0, 10, 25, 50, 100),
+  incorporate_occupancy_info = TRUE,
   multiplicity_alpha = 0.1,
-  max_false_discs = 1L,
+  max_false_discs = 2L,
   annotated_clustered_count_df_trt = NULL,
   annotated_clustered_count_df_cntrl = NULL
 )
@@ -23,6 +24,8 @@ tune_hyperparameters(
 \item{c_grid}{robust hyperparm grid}
 
 \item{lambda_grid}{lambda grid}
+
+\item{incorporate_occupancy_info}{a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation}
 
 \item{multiplicity_alpha}{nominal fdr}
 
