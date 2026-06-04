@@ -7,13 +7,14 @@
 tune_hyperparameters(
   Y_mat_trt,
   Y_mat_cntrl,
-  c_grid = c(5, 10, 25, 50, 100),
+  c_grid = c(5, 10, 25, 50, 100, 500, 1000),
   lambda_grid = c(0, 10, 25, 50, 100),
   incorporate_occupancy_info = TRUE,
-  multiplicity_alpha = 0.1,
-  max_false_discs = 2L,
+  multiplicity_alpha = 0.5,
+  max_false_discs = 5L,
   annotated_clustered_count_df_trt = NULL,
-  annotated_clustered_count_df_cntrl = NULL
+  annotated_clustered_count_df_cntrl = NULL,
+  lambda_default = 20
 )
 }
 \arguments{

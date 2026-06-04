@@ -496,20 +496,20 @@ construct_replicate_count_table <- function(clustered_count_df) {
 #'   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
 #'   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
 #'
-tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 50, 100),
+tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 50, 100, 500, 1000),
                                  lambda_grid = c(0, 10, 25, 50, 100),
                                  incorporate_occupancy_info = TRUE,
-                                 multiplicity_alpha = 0.1, max_false_discs = 2L,
+                                 multiplicity_alpha = 0.5, max_false_discs = 5L,
                                  annotated_clustered_count_df_trt = NULL,
-                                 annotated_clustered_count_df_cntrl = NULL) {
+                                 annotated_clustered_count_df_cntrl = NULL,
+                                 lambda_default = 20) {
   if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
       (!is.null(annotated_clustered_count_df_trt) && is.null(annotated_clustered_count_df_cntrl))) {
     stop("`annotated_clustered_count_df_trt` and `annotated_clustered_count_df_cntrl` must both be NULL or supplied.")
   }
 
+  # get fitted occupancy models for both conditions
   condition_grid <- c("trt", "cntrl")
-  grid <- expand.grid(c = c_grid, lambda = lambda_grid, condition = condition_grid)
-
   Y_mat_list <- list(trt = Y_mat_trt, cntrl = Y_mat_cntrl)
   annotated_clustered_count_df_list <- list(trt = annotated_clustered_count_df_trt,
                                             cntrl = annotated_clustered_count_df_cntrl)
@@ -518,6 +518,15 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 5
                                     incorporate_occupancy_info = incorporate_occupancy_info)
   }) |> setNames(condition_grid)
 
+  # set up grid
+  use_occupancy <- sapply(X = occupancy_fit_list, FUN = function(x) {
+    x$incorporate_occupancy_info
+  })
+  if (!all(use_occupancy)) {
+    lambda_grid <- lambda_default
+    message("Cannot fit occupancy model to both treated and control conditions; fixing lambda to `lambda_default`.")
+  }
+  grid <- expand.grid(c = c_grid, lambda = lambda_grid, condition = condition_grid)
   fit_grid <- expand.grid(c = c_grid, condition = condition_grid)
   fit_one_count_null <- function(i) {
     print(paste0("Fitting NB model ", i, " of ", nrow(fit_grid)))
@@ -572,7 +581,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 5
   if (any(summary_df$cntrl <= max_false_discs)) {
     selected_params <- summary_df |>
       dplyr::filter(cntrl <= max_false_discs) |>
-      dplyr::arrange(dplyr::desc(trt), lambda, c) |>
+      dplyr::arrange(dplyr::desc(trt), dplyr::desc(c), lambda) |>
       dplyr::slice(1)
     trt_idx <- sapply(grid_results, FUN = function(curr_res) {
       curr_res$params$c == selected_params$c && curr_res$params$lambda == selected_params$lambda && curr_res$params$condition == "trt"

@@ -9,7 +9,11 @@ make_guideseq_qq_plot(
   color_ground_truth = FALSE,
   rev_log_trans = TRUE,
   min_p = 1e-16,
-  annotate_discoveries = FALSE
+  annotate_discoveries = FALSE,
+  point_col = "black",
+  rej_threshold_col = "blue",
+  annotation_size = 1.5,
+  annotation_color = "red"
 )
 }
 \arguments{
