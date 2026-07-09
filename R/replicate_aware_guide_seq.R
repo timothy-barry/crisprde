@@ -502,7 +502,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 5
                                  multiplicity_alpha = 0.5, max_false_discs = 5L,
                                  annotated_clustered_count_df_trt = NULL,
                                  annotated_clustered_count_df_cntrl = NULL,
-                                 lambda_default = 20) {
+                                 lambda_default = 20, gamma_align = NULL, gamma_distance = NULL) {
   if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
       (!is.null(annotated_clustered_count_df_trt) && is.null(annotated_clustered_count_df_cntrl))) {
     stop("`annotated_clustered_count_df_trt` and `annotated_clustered_count_df_cntrl` must both be NULL or supplied.")
@@ -567,7 +567,8 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 5
                                            multiplicity_alpha = multiplicity_alpha,
                                            annotated_clustered_count_df = annotated_clustered_count_df)
     if (!is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
-      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese(multiplicity_alpha = multiplicity_alpha)
+      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese(multiplicity_alpha = multiplicity_alpha,
+                                                                  gamma_align = gamma_align, gamma_distance = gamma_distance)
     }
     list(params = curr_row, res = fit_res)
   }
@@ -673,7 +674,8 @@ load_n_run_bed <- function(n_run_bed_file_path) {
 #' annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df, n_run_df)
 #'
 #' @export
-annotate_clustered_count_df_with_homology <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL) {
+annotate_clustered_count_df_with_homology <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL,
+                                                      add_n_occupied_bases_and_width = TRUE) {
   unique_cluster_df <- clustered_count_df |>
     dplyr::select(chr = cluster_chr, start = min_cluster_coord, end = max_cluster_coord, window = window) |>
     dplyr::distinct()
@@ -780,6 +782,7 @@ annotate_clustered_count_df_with_homology <- function(clustered_count_df, homolo
                                                    modal_base_df_w_d, by = "window") |>
     dplyr::select(-chr, -start, -end, -homology_protospacer_width) |>
     dplyr::relocate(window, homology_has_hit, overlaps_n_run, homology_n_mismatches, homology_n_bulges, homology_modal_base_cut_distance)
+
 
   out <- dplyr::left_join(clustered_count_df, cluster_df_new_w_cut_w_modal, by = "window")
   return(out)
