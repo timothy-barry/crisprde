@@ -76,7 +76,7 @@ fit_rob_nb_univariate <- function(y, weights = rep(1, length(y)), c.tukey.beta=1
   beta11 <- 0
   beta00 <- beta11+tol+1
   it <- 0
-  while(abs(sigma-sigma0)>tol | max(abs(beta11-beta00))>tol & it<maxit) {
+  while((abs(sigma-sigma0) > tol | max(abs(beta11-beta00)) > tol) & it < maxit) {
     sigma0 <- sigma
     beta00 <- beta11
     # estimate sigma given mu

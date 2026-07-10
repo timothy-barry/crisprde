@@ -312,6 +312,7 @@ score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, count_fit, lambda 
 #' @param incorporate_occupancy_info a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation
 #' @param annotated_clustered_count_df optional output of `annotate_clustered_count_df_with_homology()`; if supplied, homology annotations are joined to the result data frame by window
 #'
+#' @export
 #' @returns a data frame containing a p-value for each window
 #' @examples
 #' set.seed(42)
@@ -496,13 +497,15 @@ construct_replicate_count_table <- function(clustered_count_df) {
 #'   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
 #'   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
 #'
-tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 50, 100, 500, 1000),
+tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
+                                 c_grid = c(5, 10, 25, 50, 100, 500, 1000),
                                  lambda_grid = c(0, 10, 25, 50, 100),
                                  incorporate_occupancy_info = TRUE,
                                  multiplicity_alpha = 0.5, max_false_discs = 5L,
                                  annotated_clustered_count_df_trt = NULL,
                                  annotated_clustered_count_df_cntrl = NULL,
-                                 lambda_default = 20, gamma_align = NULL, gamma_distance = NULL) {
+                                 lambda_default = 20, gamma_align = NULL, gamma_distance = NULL,
+                                 verbose = FALSE) {
   if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
       (!is.null(annotated_clustered_count_df_trt) && is.null(annotated_clustered_count_df_cntrl))) {
     stop("`annotated_clustered_count_df_trt` and `annotated_clustered_count_df_cntrl` must both be NULL or supplied.")
@@ -545,7 +548,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl, c_grid = c(5, 10, 25, 5
   count_fit_names <- sapply(count_fit_list, FUN = function(curr_fit) {
     paste(as.character(curr_fit$params$condition), curr_fit$params$c[[1]], sep = "_")
   })
-  names(count_fit_list) <- count_fit_names
+   names(count_fit_list) <- count_fit_names
 
   score_one_grid_row <- function(i) {
     print(paste0("Scoring ", i, " of ", nrow(grid)))

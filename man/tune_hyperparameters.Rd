@@ -14,7 +14,10 @@ tune_hyperparameters(
   max_false_discs = 5L,
   annotated_clustered_count_df_trt = NULL,
   annotated_clustered_count_df_cntrl = NULL,
-  lambda_default = 20
+  lambda_default = 20,
+  gamma_align = NULL,
+  gamma_distance = NULL,
+  verbose = FALSE
 )
 }
 \arguments{

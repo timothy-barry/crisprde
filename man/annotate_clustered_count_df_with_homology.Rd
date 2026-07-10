@@ -7,7 +7,8 @@
 annotate_clustered_count_df_with_homology(
   clustered_count_df,
   homology_df = NULL,
-  n_run_df = NULL
+  n_run_df = NULL,
+  add_n_occupied_bases_and_width = TRUE
 )
 }
 \arguments{
