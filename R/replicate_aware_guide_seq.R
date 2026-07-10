@@ -202,21 +202,7 @@ fit_multirep_guideseq_count_null <- function(Y_mat, occupancy_fit, c_tukey_beta 
     fit[c("mu", "theta")]
   }) |> t()
 
-  pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
-    max_count <- qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
-    dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
-  }, simplify = FALSE)
-
-  conv_pmf_list <- apply(X = occupancy_fit$Omega, MARGIN = 1, FUN = function(curr_row) {
-    convolve_pmf_list(pmf_list[as.logical(curr_row)])
-  }, simplify = FALSE)
-  right_tail_prob_list <- lapply(X = conv_pmf_list, FUN = function(curr_pmf) {
-    rev(cumsum(rev(curr_pmf)))
-  })
-
-  ret <- list(mu_theta_hat_mat = mu_theta_hat_mat,
-              right_tail_prob_list = right_tail_prob_list)
-  return(ret)
+  return(mu_theta_hat_mat)
 }
 
 
@@ -233,14 +219,13 @@ get_p_values_given_test_stats_prob_vector <- function(test_stat_v_in, right_tail
 }
 
 
-score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, count_fit, lambda = 20,
+score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, mu_theta_hat_mat, lambda = 20,
                                         multiplicity_alpha = 0.1, annotated_clustered_count_df = NULL) {
   # unpack items
   X <- occupancy_fit$X
   Omega <- occupancy_fit$Omega
   col_keys <- occupancy_fit$col_keys
   incorporate_occupancy_info <- occupancy_fit$incorporate_occupancy_info
-  right_tail_prob_list <- count_fit$right_tail_prob_list
   occupancy_pattern_map <- occupancy_fit$occupancy_pattern_map
 
   # compute total UMI count and initialize p-value vector
@@ -252,6 +237,9 @@ score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, count_fit, lambda 
     # no occupancy info
     p_vals <- numeric(length = length(total_umi_counts))
     test_stats <- total_umi_counts - occupancy_counts
+    right_tail_prob_list <- get_right_tail_prob_list(mu_theta_hat_mat = mu_theta_hat_mat,
+                                                     max_needed = max(test_stats),
+                                                     Omega = Omega)
     for (i in seq_along(right_tail_prob_list)) {
       idxs <- which(occupancy_pattern_map == i)
       p_vals[idxs] <- get_p_values_given_test_stats_prob_vector(
@@ -265,7 +253,10 @@ score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, count_fit, lambda 
     window_log_pi_sum <- as.numeric(crossprod(log_pi_hat, X))
     pattern_log_pi_sum <- as.numeric(Omega %*% log_pi_hat)
     test_stats <- (total_umi_counts - occupancy_counts) - lambda * window_log_pi_sum
-    l <- sapply(X = seq_along(right_tail_prob_list), FUN = function(i) {
+    max_needed <- max(0L, ceiling(max(test_stats) + lambda * max(pattern_log_pi_sum)))
+    right_tail_prob_list <- get_right_tail_prob_list(mu_theta_hat_mat = mu_theta_hat_mat,
+                                                     max_needed = max_needed, Omega = Omega)
+    l <- sapply(X = seq_len(nrow(Omega)), FUN = function(i) {
       sum_start <- ceiling(test_stats + lambda * pattern_log_pi_sum[i])
       nb_piece <- get_p_values_given_test_stats_prob_vector(
         test_stat_v_in = sum_start,
@@ -297,11 +288,27 @@ score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, count_fit, lambda 
       dplyr::distinct()
     res_df <- dplyr::left_join(res_df, right_df, by = "window")
   }
-  ests_list <- list(mu_theta_hat_mat = count_fit$mu_theta_hat_mat)
+  ests_list <- list(mu_theta_hat_mat = mu_theta_hat_mat)
   if (incorporate_occupancy_info) ests_list$pi_hat <- occupancy_fit$pi_hat
   ret <- list(res_df = res_df, ests_list = ests_list)
   return(ret)
 }
+
+
+get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega) {
+  pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
+    max_count <- max(max_needed, qnbinom(p = 1e-16, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE))
+    dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
+  }, simplify = FALSE)
+  conv_pmf_list <- apply(X = Omega, MARGIN = 1, FUN = function(curr_row) {
+    convolve_pmf_list(pmf_list[as.logical(curr_row)])
+  }, simplify = FALSE)
+  right_tail_prob_list <- lapply(X = conv_pmf_list, FUN = function(curr_pmf) {
+    rev(cumsum(rev(curr_pmf)))
+  })
+  return(right_tail_prob_list)
+}
+
 
 
 #' Run multivariate guide-seq method
@@ -349,14 +356,14 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
                                                robust_fit = TRUE, annotated_clustered_count_df = NULL) {
   occupancy_fit <- fit_multirep_guideseq_occupancy(Y_mat = Y_mat,
                                                    incorporate_occupancy_info = incorporate_occupancy_info)
-  count_fit <- fit_multirep_guideseq_count_null(Y_mat = Y_mat,
-                                                occupancy_fit = occupancy_fit,
-                                                c_tukey_beta = c_tukey_beta,
-                                                c_tukey_sigma = c_tukey_sigma,
-                                                robust_fit = robust_fit)
+  mu_theta_hat_mat <- fit_multirep_guideseq_count_null(Y_mat = Y_mat,
+                                                       occupancy_fit = occupancy_fit,
+                                                       c_tukey_beta = c_tukey_beta,
+                                                       c_tukey_sigma = c_tukey_sigma,
+                                                       robust_fit = robust_fit)
   ret <- score_multirep_guideseq_fit(Y_mat = Y_mat,
                                      occupancy_fit = occupancy_fit,
-                                     count_fit = count_fit,
+                                     mu_theta_hat_mat = mu_theta_hat_mat,
                                      lambda = lambda,
                                      multiplicity_alpha = multiplicity_alpha,
                                      annotated_clustered_count_df = annotated_clustered_count_df)
@@ -536,19 +543,19 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     curr_row <- fit_grid[i, , drop = FALSE]
     curr_condition <- as.character(curr_row$condition)
     curr_c <- curr_row$c[[1]]
-    fit <- fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]],
-                                            occupancy_fit = occupancy_fit_list[[curr_condition]],
-                                            c_tukey_beta = curr_c,
-                                            c_tukey_sigma = curr_c,
-                                            robust_fit = TRUE)
-    list(params = curr_row, count_fit = fit)
+    mu_theta_hat <- fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]],
+                                                     occupancy_fit = occupancy_fit_list[[curr_condition]],
+                                                     c_tukey_beta = curr_c,
+                                                     c_tukey_sigma = curr_c,
+                                                     robust_fit = TRUE)
+    list(params = curr_row, mu_theta_hat = mu_theta_hat)
   }
 
   count_fit_list <- lapply(X = seq_len(nrow(fit_grid)), FUN = fit_one_count_null)
   count_fit_names <- sapply(count_fit_list, FUN = function(curr_fit) {
     paste(as.character(curr_fit$params$condition), curr_fit$params$c[[1]], sep = "_")
   })
-   names(count_fit_list) <- count_fit_names
+  names(count_fit_list) <- count_fit_names
 
   score_one_grid_row <- function(i) {
     print(paste0("Scoring ", i, " of ", nrow(grid)))
@@ -556,7 +563,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     curr_condition <- as.character(curr_row$condition)
     curr_c <- curr_row$c[[1]]
     curr_lambda <- curr_row$lambda[[1]]
-    count_fit <- count_fit_list[[paste(curr_condition, curr_c, sep = "_")]]$count_fit
+    mu_theta_hat <- count_fit_list[[paste(curr_condition, curr_c, sep = "_")]]$mu_theta_hat
     if (curr_condition == "trt") {
       curr_Y_mat <- Y_mat_trt
     } else {
@@ -565,7 +572,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     annotated_clustered_count_df <- annotated_clustered_count_df_list[[curr_condition]]
     fit_res <- score_multirep_guideseq_fit(Y_mat = curr_Y_mat,
                                            occupancy_fit = occupancy_fit_list[[curr_condition]],
-                                           count_fit = count_fit,
+                                           mu_theta_hat_mat = mu_theta_hat,
                                            lambda = curr_lambda,
                                            multiplicity_alpha = multiplicity_alpha,
                                            annotated_clustered_count_df = annotated_clustered_count_df)
