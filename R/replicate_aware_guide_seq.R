@@ -190,8 +190,7 @@ fit_multirep_guideseq_occupancy <- function(Y_mat, incorporate_occupancy_info = 
   return(ret)
 }
 
-fit_multirep_guideseq_count_null <- function(Y_mat, occupancy_fit, c_tukey_beta = 5,
-                                             c_tukey_sigma = 5, robust_fit = TRUE) {
+fit_multirep_guideseq_count_null <- function(Y_mat, c_tukey_beta = 5, c_tukey_sigma = 5, robust_fit = TRUE) {
   mu_theta_hat_mat <- apply(X = Y_mat, MARGIN = 1, FUN = function(curr_row) {
     y_plus <- curr_row[curr_row > 0]
     if (robust_fit) {
@@ -357,7 +356,6 @@ run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info
   occupancy_fit <- fit_multirep_guideseq_occupancy(Y_mat = Y_mat,
                                                    incorporate_occupancy_info = incorporate_occupancy_info)
   mu_theta_hat_mat <- fit_multirep_guideseq_count_null(Y_mat = Y_mat,
-                                                       occupancy_fit = occupancy_fit,
                                                        c_tukey_beta = c_tukey_beta,
                                                        c_tukey_sigma = c_tukey_sigma,
                                                        robust_fit = robust_fit)
@@ -544,7 +542,6 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     curr_condition <- as.character(curr_row$condition)
     curr_c <- curr_row$c[[1]]
     mu_theta_hat <- fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]],
-                                                     occupancy_fit = occupancy_fit_list[[curr_condition]],
                                                      c_tukey_beta = curr_c,
                                                      c_tukey_sigma = curr_c,
                                                      robust_fit = TRUE)
