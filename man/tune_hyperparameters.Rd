@@ -61,10 +61,10 @@ dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%i
 homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
-  annotate_clustered_count_df_with_homology(homology_df = homology_df, n_run_df = n_run_df) |>
+  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df) |>
   dplyr::filter(homology_has_hit)
 annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
-  annotate_clustered_count_df_with_homology(homology_df = homology_df, n_run_df = n_run_df) |>
+  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df) |>
   dplyr::filter(homology_has_hit)
 Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt)
 Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntrl)

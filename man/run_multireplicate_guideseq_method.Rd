@@ -20,7 +20,7 @@ run_multireplicate_guideseq_method(
 
 \item{incorporate_occupancy_info}{a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation}
 
-\item{annotated_clustered_count_df}{optional output of \code{annotate_clustered_count_df_with_homology()}; if supplied, homology annotations are joined to the result data frame by window}
+\item{annotated_clustered_count_df}{optional output of \code{annotate_clustered_count_df()}; if supplied, homology annotations are joined to the result data frame by window}
 }
 \value{
 a data frame containing a p-value for each window

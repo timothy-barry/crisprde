@@ -282,7 +282,7 @@ score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, mu_theta_hat_mat, 
   rownames(res_df) <- NULL
   if (!is.null(annotated_clustered_count_df)) {
     right_df <- annotated_clustered_count_df |>
-      dplyr::select(window, starts_with("homology")) |>
+      dplyr::select(window, dplyr::starts_with(c("homology", "window"))) |>
       dplyr::filter(window %in% res_df$window) |>
       dplyr::distinct()
     res_df <- dplyr::left_join(res_df, right_df, by = "window")
@@ -316,7 +316,7 @@ get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega) {
 #'
 #' @param Y_mat the r x m integer matrix of UMI counts, where r is the number of replicates and m is the number of windows
 #' @param incorporate_occupancy_info a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation
-#' @param annotated_clustered_count_df optional output of `annotate_clustered_count_df_with_homology()`; if supplied, homology annotations are joined to the result data frame by window
+#' @param annotated_clustered_count_df optional output of `annotate_clustered_count_df()`; if supplied, homology annotations are joined to the result data frame by window
 #'
 #' @export
 #' @returns a data frame containing a p-value for each window
@@ -491,10 +491,10 @@ construct_replicate_count_table <- function(clustered_count_df) {
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 #' n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 #' annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
-#'   annotate_clustered_count_df_with_homology(homology_df = homology_df, n_run_df = n_run_df) |>
+#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df) |>
 #'   dplyr::filter(homology_has_hit)
 #' annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
-#'   annotate_clustered_count_df_with_homology(homology_df = homology_df, n_run_df = n_run_df) |>
+#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df) |>
 #'   dplyr::filter(homology_has_hit)
 #' Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt)
 #' Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntrl)
@@ -678,11 +678,12 @@ load_n_run_bed <- function(n_run_bed_file_path) {
 #' dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 #' cluster_loci()
 #'
-#' annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df, n_run_df)
+#' annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
+#'   homology_df = homology_df, n_run_df = n_run_df)
 #'
 #' @export
-annotate_clustered_count_df_with_homology <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL,
-                                                      add_n_occupied_bases_and_width = TRUE) {
+annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL,
+                                        add_n_occupied_bases_and_width = TRUE) {
   unique_cluster_df <- clustered_count_df |>
     dplyr::select(chr = cluster_chr, start = min_cluster_coord, end = max_cluster_coord, window = window) |>
     dplyr::distinct()
@@ -701,6 +702,14 @@ annotate_clustered_count_df_with_homology <- function(clustered_count_df, homolo
                   homology_strand = NA_character_, homology_dna = NA_character_,
                   homology_gRNA = NA_character_, homology_protospacer_width = NA_integer_,
                   overlaps_n_run = FALSE)
+
+  if (add_n_occupied_bases_and_width) {
+    clustered_count_df_w_simple_stats <- clustered_count_df |>
+      dplyr::group_by(window) |>
+      dplyr::summarize(window_n_occupied_bases = length(unique(coord)),
+                       window_width = max_cluster_coord[1] - min_cluster_coord[1] + 1L)
+    cluster_df_new <- dplyr::left_join(cluster_df_new, clustered_count_df_w_simple_stats, by = "window")
+  }
 
   if (!is.null(n_run_df)) {
     n_run_gr <- GenomicRanges::GRanges(

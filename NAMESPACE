@@ -2,7 +2,7 @@
 
 export(align_spacer_seq)
 export(align_spacer_to_genome)
-export(annotate_clustered_count_df_with_homology)
+export(annotate_clustered_count_df)
 export(append_lead_base)
 export(cluster_loci)
 export(collapse_count_matrix_by_allele)
