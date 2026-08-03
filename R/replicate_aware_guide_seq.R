@@ -660,6 +660,8 @@ load_n_run_bed <- function(n_run_bed_file_path) {
 #' - `overlaps_n_run` (indicating whether the window overlaps an N-run in the reference genome)
 #' - `homology_n_mismatches` (indicating the number of mismatches between aligned spacer and protospacer sequence)
 #' - `homology_n_bulges` (indicating number of bulges between aligned spacer and protospacer sequence)
+#' - `homology_bulge_type` (indicating the CRISPRitz bulge type)
+#' - `homology_cfd` (indicating the CFD-like homology score)
 #' - `homology_posit` (indicating the position of the start of the protospacer)
 #' - `homology_strand` (indicating whether the protospacer is on the plus or minus strand)
 #' - `homology_dna` (aligned protospacer sequence)
@@ -677,7 +679,6 @@ load_n_run_bed <- function(n_run_bed_file_path) {
 #' dplyr::filter(treated & cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2 & chr != "chrM") |>
 #' dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 #' cluster_loci()
-#'
 #' annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
 #'   homology_df = homology_df, n_run_df = n_run_df)
 #'
@@ -699,7 +700,8 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
   cluster_df_new <- unique_cluster_df |>
     dplyr::mutate(homology_has_hit = FALSE, homology_n_mismatches = NA_real_,
                   homology_n_bulges = NA_real_, homology_posit = NA_real_,
-                  homology_strand = NA_character_, homology_dna = NA_character_,
+                  homology_bulge_type = NA_character_, homology_strand = NA_character_,
+                  homology_dna = NA_character_, homology_cfd = NA_real_,
                   homology_gRNA = NA_character_, homology_protospacer_width = NA_integer_,
                   overlaps_n_run = FALSE)
 
@@ -760,12 +762,17 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
     homology_idx <- best_hit_df$homology_idx
     cluster_df_new$homology_n_mismatches[cluster_idx] <- homology_df$n_mismatches[homology_idx]
     cluster_df_new$homology_n_bulges[cluster_idx] <- homology_df$n_bulges[homology_idx]
+    cluster_df_new$homology_bulge_type[cluster_idx] <- homology_df$bulge_type[homology_idx]
     cluster_df_new$homology_posit[cluster_idx] <- homology_df$posit[homology_idx]
     cluster_df_new$homology_protospacer_width[cluster_idx] <- homology_df$protospacer_width[homology_idx]
     cluster_df_new$homology_strand[cluster_idx] <- homology_df$strand[homology_idx]
     cluster_df_new$homology_dna[cluster_idx] <- homology_df$dna[homology_idx]
     cluster_df_new$homology_gRNA[cluster_idx] <- homology_df$gRNA[homology_idx]
   }
+
+  cluster_df_new$homology_cfd <- calulate_cfd_score(homology_dna = cluster_df_new$homology_dna,
+                                                    homology_gRNA = cluster_df_new$homology_gRNA,
+                                                    homology_has_hit = cluster_df_new$homology_has_hit)
 
   # identify the cut site
   cluster_df_new_w_cut <- cluster_df_new |>
@@ -797,7 +804,7 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
   cluster_df_new_w_cut_w_modal <- dplyr::left_join(cluster_df_new_w_cut,
                                                    modal_base_df_w_d, by = "window") |>
     dplyr::select(-chr, -start, -end, -homology_protospacer_width) |>
-    dplyr::relocate(window, homology_has_hit, overlaps_n_run, homology_n_mismatches, homology_n_bulges, homology_modal_base_cut_distance)
+    dplyr::relocate(window, homology_has_hit, overlaps_n_run, homology_n_mismatches, homology_n_bulges, homology_cfd, homology_modal_base_cut_distance)
 
 
   out <- dplyr::left_join(clustered_count_df, cluster_df_new_w_cut_w_modal, by = "window")

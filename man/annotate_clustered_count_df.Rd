@@ -25,6 +25,8 @@ Add colummns:
 \item \code{overlaps_n_run} (indicating whether the window overlaps an N-run in the reference genome)
 \item \code{homology_n_mismatches} (indicating the number of mismatches between aligned spacer and protospacer sequence)
 \item \code{homology_n_bulges} (indicating number of bulges between aligned spacer and protospacer sequence)
+\item \code{homology_bulge_type} (indicating the CRISPRitz bulge type)
+\item \code{homology_cfd} (indicating the CFD-like homology score)
 \item \code{homology_posit} (indicating the position of the start of the protospacer)
 \item \code{homology_strand} (indicating whether the protospacer is on the plus or minus strand)
 \item \code{homology_dna} (aligned protospacer sequence)
@@ -39,7 +41,6 @@ clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combin
 dplyr::filter(treated & cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2 & chr != "chrM") |>
 dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 cluster_loci()
-
 annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
   homology_df = homology_df, n_run_df = n_run_df)
 
