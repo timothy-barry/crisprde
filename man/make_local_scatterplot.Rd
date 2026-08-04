@@ -4,10 +4,12 @@
 \alias{make_local_scatterplot}
 \title{Make local scatterplot}
 \usage{
-make_local_scatterplot(annotated_df_sub)
+make_local_scatterplot(annotated_df_sub, title = NULL)
 }
 \arguments{
 \item{annotated_df_sub}{the annotated data frame for one window. gRNA and DNA sequence information must be present.}
+
+\item{title}{plot title}
 }
 \value{
 a ggplot of the local UMI count distribution

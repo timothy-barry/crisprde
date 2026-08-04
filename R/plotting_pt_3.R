@@ -123,6 +123,9 @@ make_local_scatterplot <- function(annotated_df_sub, title = NULL) {
 
   # prepare sequences
   dna_seq <- (annotated_df_sub$homology_dna[1] |> strsplit(split = ""))[[1]]
+  if (any(dna_seq == "-")) {
+    stop("Plotting DNA-side gaps is not yet implemented.")
+  }
   grna_spacer <- (annotated_df_sub$homology_gRNA[1] |> strsplit(split = ""))[[1]]
   pam_site <- seq(length(grna_spacer) - 2L, length(grna_spacer))
   pam_strand <- annotated_df_sub$homology_strand[1]
