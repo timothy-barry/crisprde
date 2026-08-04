@@ -17,8 +17,17 @@ Make local scatterplot
 }
 \examples{
 caliper_res <- readRDS("/Users/timbarry/research_offsite/projects/crisprde-project/guideseq/hyperparam_res_list.rds")
+
+
+# plus strand PAM
 res_df <- caliper_res$elane_cd34_wtcas9_e3sa$tuning_res$selected_trt_run$res_df
 window_id <- res_df |> dplyr::slice(1L) |> dplyr::pull(window)
 annotated_df_sub <- caliper_res$elane_cd34_wtcas9_e3sa$annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
+p <- make_local_scatterplot(annotated_df_sub)
+
+# minus strand PAM
+res_df <- caliper_res$bcl11a_293t_1620_sprycas9$tuning_res$selected_trt_run$res_df
+window_id <- res_df |> dplyr::slice(1L) |> dplyr::pull(window)
+annotated_df_sub <- caliper_res$bcl11a_293t_1620_sprycas9$annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
 p <- make_local_scatterplot(annotated_df_sub)
 }

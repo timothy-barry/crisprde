@@ -95,17 +95,27 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_tr
 #' Make local scatterplot
 #'
 #' @param annotated_df_sub the annotated data frame for one window. gRNA and DNA sequence information must be present.
+#' @param title plot title
 #'
 #' @returns a ggplot of the local UMI count distribution
 #' @export
 #'
 #' @examples
 #' caliper_res <- readRDS("/Users/timbarry/research_offsite/projects/crisprde-project/guideseq/hyperparam_res_list.rds")
+#'
+#'
+#' # plus strand PAM
 #' res_df <- caliper_res$elane_cd34_wtcas9_e3sa$tuning_res$selected_trt_run$res_df
 #' window_id <- res_df |> dplyr::slice(1L) |> dplyr::pull(window)
 #' annotated_df_sub <- caliper_res$elane_cd34_wtcas9_e3sa$annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
 #' p <- make_local_scatterplot(annotated_df_sub)
-make_local_scatterplot <- function(annotated_df_sub) {
+#'
+#' # minus strand PAM
+#' res_df <- caliper_res$bcl11a_293t_1620_sprycas9$tuning_res$selected_trt_run$res_df
+#' window_id <- res_df |> dplyr::slice(1L) |> dplyr::pull(window)
+#' annotated_df_sub <- caliper_res$bcl11a_293t_1620_sprycas9$annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
+#' p <- make_local_scatterplot(annotated_df_sub)
+make_local_scatterplot <- function(annotated_df_sub, title = NULL) {
   library(patchwork)
 
   count_df_sub_plus <- annotated_df_sub |> dplyr::filter(strand == "+")
@@ -115,10 +125,15 @@ make_local_scatterplot <- function(annotated_df_sub) {
   dna_seq <- (annotated_df_sub$homology_dna[1] |> strsplit(split = ""))[[1]]
   grna_spacer <- (annotated_df_sub$homology_gRNA[1] |> strsplit(split = ""))[[1]]
   pam_site <- seq(length(grna_spacer) - 2L, length(grna_spacer))
+  pam_strand <- annotated_df_sub$homology_strand[1]
   grna_spacer[pam_site] <- ""
   grna_spacer[grna_spacer == "T"] <- "U"
   homology_start <- annotated_df_sub$homology_posit[1]
-  x_range <- seq(homology_start, homology_start + length(dna_seq) - 1L) + 1L
+  if (pam_strand == "+") {
+    x_range <- seq(homology_start, homology_start + length(dna_seq) - 1L) + 1L
+  } else {
+    x_range <- seq(homology_start + length(dna_seq), homology_start + 1L)
+  }
   label_df <- data.frame(coord = x_range,
                          dna_seq = dna_seq,
                          grna_spacer = grna_spacer)
@@ -202,11 +217,18 @@ make_local_scatterplot <- function(annotated_df_sub) {
       ggplot2::ylab("") +
       ggplot2::scale_y_continuous(limits = c(-0.02, 0.06),
                                   expand = ggplot2::expansion(mult = 0, add = 0))
-
+  if (is.null(title)) {
+    title <- paste0(annotated_df_sub$window[1], " (", pam_strand, " strand PAM)")
+  }
 
       cut_spot_x <- mean(c(cut_start_posit, cut_end_posit))
       p_middle <- p_middle + ggplot2::geom_vline(xintercept = cut_spot_x, col = "orange")
   p_all <- (p_plus /  p_middle / p_minus) +
-    plot_layout(heights = c(1, 0.22, 1), axes = "collect")
+    plot_layout(heights = c(1, 0.22, 1), axes = "collect") +
+    patchwork::plot_annotation(
+      title = title,
+      theme = ggplot2::theme(plot.title = ggplot2::element_text(size = 10, hjust = 0.5))
+    )
+
   return(p_all)
 }
