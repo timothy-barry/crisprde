@@ -91,31 +91,122 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_tr
 }
 
 
-make_dunn_smyth_qq_plot <- function(y, fit, seed = 1) {
-  set.seed(seed)
-  y <- y - 1L
-  mu <- unname(fit[["mu"]])
-  theta <- unname(fit[["theta"]])
 
-  p_lo <- ifelse(y <= 0, 0, pnbinom(q = y - 1L, mu = mu, size = theta))
-  p_hi <- pnbinom(q = y, mu = mu, size = theta)
-  u <- stats::runif(length(y), min = p_lo, max = p_hi)
-  resid <- stats::qnorm(u)
-  ord <- order(resid)
+#' Make local scatterplot
+#'
+#' @param annotated_df_sub the annotated data frame for one window. gRNA and DNA sequence information must be present.
+#'
+#' @returns a ggplot of the local UMI count distribution
+#' @export
+#'
+#' @examples
+#' caliper_res <- readRDS("/Users/timbarry/research_offsite/projects/crisprde-project/guideseq/hyperparam_res_list.rds")
+#' res_df <- caliper_res$elane_cd34_wtcas9_e3sa$tuning_res$selected_trt_run$res_df
+#' window_id <- res_df |> dplyr::slice(1L) |> dplyr::pull(window)
+#' annotated_df_sub <- caliper_res$elane_cd34_wtcas9_e3sa$annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
+#' p <- make_local_scatterplot(annotated_df_sub)
+make_local_scatterplot <- function(annotated_df_sub) {
+  library(patchwork)
 
-  qq_df <- tibble::tibble(
-    theoretical = stats::qnorm(stats::ppoints(length(resid))),
-    sample = resid[ord],
-  )
+  count_df_sub_plus <- annotated_df_sub |> dplyr::filter(strand == "+")
+  count_df_sub_minus <- annotated_df_sub |> dplyr::filter(strand == "-")
 
-  p <- ggplot2::ggplot(qq_df, ggplot2::aes(x = theoretical, y = sample)) +
-    ggplot2::geom_point() +
-    ggplot2::geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "firebrick") +
-    ggplot2::xlab("Theoretical normal quantiles") +
-    ggplot2::ylab("Dunn-Smyth residual quantiles") +
-    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.06)) +
-    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = 0.06)) +
+  # prepare sequences
+  dna_seq <- (annotated_df_sub$homology_dna[1] |> strsplit(split = ""))[[1]]
+  grna_spacer <- (annotated_df_sub$homology_gRNA[1] |> strsplit(split = ""))[[1]]
+  pam_site <- seq(length(grna_spacer) - 2L, length(grna_spacer))
+  grna_spacer[pam_site] <- ""
+  grna_spacer[grna_spacer == "T"] <- "U"
+  homology_start <- annotated_df_sub$homology_posit[1]
+  x_range <- seq(homology_start, homology_start + length(dna_seq) - 1L) + 1L
+  label_df <- data.frame(coord = x_range,
+                         dna_seq = dna_seq,
+                         grna_spacer = grna_spacer)
+  label_df$base_type <- "protospacer"
+  label_df$base_type[pam_site] <- "pam"
+  cut_start_posit <- annotated_df_sub$homology_cut_start[1]
+  cut_end_posit <- annotated_df_sub$homology_cut_end[1]
+
+  # sum across replicates and primer orientations
+  count_df_sub_aggr <- annotated_df_sub |>
+    dplyr::select(coord, umi_count, strand) |>
+    dplyr::group_by(coord, strand) |>
+    dplyr::summarize(umi_count = sum(umi_count)) |> dplyr::ungroup()
+
+  # create the df to plot
+  create_df_to_plot <- function(label_df, count_df_sub_aggr, curr_strand) {
+    df_to_plot <- dplyr::left_join(label_df,
+                                   count_df_sub_aggr |>
+                                     dplyr::filter(strand == curr_strand) |>
+                                     dplyr::select(-strand),
+                                   by = "coord")
+  }
+  minus_df_to_plot <- create_df_to_plot(label_df = label_df, count_df_sub_aggr = count_df_sub_aggr, curr_strand = "-")
+  plus_df_to_plot <- create_df_to_plot(label_df = label_df, count_df_sub_aggr = count_df_sub_aggr, curr_strand = "+")
+
+  make_base_plot <- function(curr_count_df_sub) {
+    p <- ggplot2::ggplot(data = curr_count_df_sub |> na.omit(),
+                         mapping = ggplot2::aes(x = coord, y = umi_count)) +
+      ggplot2::geom_segment(ggplot2::aes(x = coord, xend = coord, y = 1, yend = umi_count)) +
+      ggplot2::geom_point() +
+      ggplot2::theme_bw(base_size = 10) + ggplot2::xlab("Coordinate") +
+      ggplot2::theme(panel.grid.major.x = ggplot2::element_blank(),
+                     panel.grid.minor.x = ggplot2::element_blank(),
+                     axis.title.x = ggplot2::element_blank(),
+                     axis.text.x  = ggplot2::element_blank(),
+                     axis.ticks.x = ggplot2::element_blank(),
+                     panel.border = ggplot2::element_blank(),
+                     plot.margin = ggplot2::margin(0.0, 5.5, 0.0, 5.5)) +
+      ggplot2::scale_x_continuous(limits = range(label_df$coord))
+  }
+  p_plus <- make_base_plot(plus_df_to_plot)
+  p_minus <- make_base_plot(minus_df_to_plot)
+
+  # make top and bottom umi plots
+  y_max <- max(c(plus_df_to_plot$umi_count, minus_df_to_plot$umi_count), na.rm = TRUE)
+  y_limits <- c(0, y_max)
+  p_plus <- p_plus + ggplot2::ylab("") +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = 0.025, add = 0),
+                                limits = y_limits)
+  p_minus <- p_minus + ggplot2::ylab("") +
+    ggplot2::scale_y_continuous(trans = scales::reverse_trans(),
+                                expand = ggplot2::expansion(mult = 0.025, add = 0),
+                                limits = y_limits[c(2L, 1L)])
+
+  # make middle plot
+  to_plot <- tidyr::pivot_longer(data = label_df, cols = c("dna_seq", "grna_spacer"),
+                      names_to = "dna_or_rna", values_to = "base_value") |>
+    dplyr::mutate(y = ifelse(dna_or_rna == "dna_seq", 0, 0.04),
+                  base_type_dna_or_rna = paste0(base_type, "_", dna_or_rna))
+
+  p_middle <- ggplot2::ggplot() +
+    ggplot2::geom_text(ggplot2::aes(x = coord, y = y, label = base_value, col = base_type_dna_or_rna),
+                       data = to_plot, size = 3.2) +
+    ggplot2::scale_color_manual(values = c("pam_dna_seq" = "red",
+                                           "protospacer_dna_seq" = "black",
+                                           "protospacer_grna_spacer" = "dodgerblue3")) +
+    ggplot2::theme(legend.position = "none") +
     ggplot2::theme_bw() +
-    ggplot2::theme(plot.margin = ggplot2::margin(10, 12, 10, 10))
-  p
+    ggplot2::theme(panel.grid.major.x = ggplot2::element_blank(),
+                   panel.grid.minor.x = ggplot2::element_blank(),
+                   panel.grid.major.y = ggplot2::element_blank(),
+                   panel.grid.minor.y = ggplot2::element_blank(),
+                   axis.title.x = ggplot2::element_blank(),
+                   axis.text.x  = ggplot2::element_blank(),
+                   axis.ticks.x = ggplot2::element_blank(),
+                   axis.text.y  = ggplot2::element_blank(),
+                   axis.ticks.y = ggplot2::element_blank(),
+                   panel.border = ggplot2::element_blank(),
+                   plot.margin = ggplot2::margin(0.0, 5.5, 0.0, 5.5),
+                   legend.position = "none") +
+      ggplot2::ylab("") +
+      ggplot2::scale_y_continuous(limits = c(-0.02, 0.06),
+                                  expand = ggplot2::expansion(mult = 0, add = 0))
+
+
+      cut_spot_x <- mean(c(cut_start_posit, cut_end_posit))
+      p_middle <- p_middle + ggplot2::geom_vline(xintercept = cut_spot_x, col = "orange")
+  p_all <- (p_plus /  p_middle / p_minus) +
+    plot_layout(heights = c(1, 0.22, 1), axes = "collect")
+  return(p_all)
 }

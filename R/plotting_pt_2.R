@@ -38,7 +38,7 @@ create_umi_hist_plot <- function(result_df, count_df, grna_spacer, pam, i) {
     cut_base_range <- grna_spacer_biostring <- NULL
     best_alignment_res <- list()
   }
-  p <- make_local_scatterplot(count_df_sub = count_df_shift,
+  p <- make_local_scatterplot_old(count_df_sub = count_df_shift,
                               x_range = x_range,
                               log_trans = FALSE,
                               target_seq = query_seq,
@@ -69,7 +69,7 @@ create_umi_hist_plot <- function(result_df, count_df, grna_spacer, pam, i) {
 #' @param pam_range
 #' @param cut_base_range
 #' @export
-make_local_scatterplot <- function(count_df_sub, x_range = NULL, log_trans = FALSE, point_size = 1,
+make_local_scatterplot_old <- function(count_df_sub, x_range = NULL, log_trans = FALSE, point_size = 1,
                                    col = c("dodgerblue3", "firebrick")[1], title = NULL, target_seq = NULL,
                                    grna_spacer = NULL, pam_strand = NULL, protospacer_range = NULL, pam_range = NULL,
                                    cut_base_range = NULL) {
