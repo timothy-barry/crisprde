@@ -509,6 +509,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                  multiplicity_alpha = 0.5, max_false_discs = 5L,
                                  annotated_clustered_count_df_trt = NULL,
                                  annotated_clustered_count_df_cntrl = NULL,
+                                 weight_p_values = TRUE,
                                  lambda_default = 20, gamma_align = NULL, gamma_distance = NULL,
                                  verbose = FALSE) {
   if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
@@ -573,7 +574,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                            lambda = curr_lambda,
                                            multiplicity_alpha = multiplicity_alpha,
                                            annotated_clustered_count_df = annotated_clustered_count_df)
-    if (!is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
+    if (weight_p_values && !is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
       fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese(multiplicity_alpha = multiplicity_alpha,
                                                                   gamma_align = gamma_align, gamma_distance = gamma_distance)
     }

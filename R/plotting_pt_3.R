@@ -183,10 +183,10 @@ make_local_scatterplot <- function(annotated_df_sub, title = NULL) {
   # make top and bottom umi plots
   y_max <- max(c(plus_df_to_plot$umi_count, minus_df_to_plot$umi_count), na.rm = TRUE)
   y_limits <- c(0, y_max)
-  p_plus <- p_plus + ggplot2::ylab("") +
+  p_plus <- p_plus + ggplot2::ylab("(+ strand)") +
     ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = 0.025, add = 0),
                                 limits = y_limits)
-  p_minus <- p_minus + ggplot2::ylab("") +
+  p_minus <- p_minus + ggplot2::ylab("(- strand)") +
     ggplot2::scale_y_continuous(trans = scales::reverse_trans(),
                                 expand = ggplot2::expansion(mult = 0.025, add = 0),
                                 limits = y_limits[c(2L, 1L)])
@@ -217,7 +217,7 @@ make_local_scatterplot <- function(annotated_df_sub, title = NULL) {
                    panel.border = ggplot2::element_blank(),
                    plot.margin = ggplot2::margin(0.0, 5.5, 0.0, 5.5),
                    legend.position = "none") +
-      ggplot2::ylab("") +
+      ggplot2::ylab("UMI count") +
       ggplot2::scale_y_continuous(limits = c(-0.02, 0.06),
                                   expand = ggplot2::expansion(mult = 0, add = 0))
   if (is.null(title)) {

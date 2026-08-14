@@ -1,17 +1,3 @@
-boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
-  # compute the align score as homology_n_mismatches + 2 * homology_n_bulges; for na windows, the max of this quantity + 1
-  augmented_result_df <- augmented_result_df |>
-    dplyr::mutate(align_score = homology_n_mismatches + 2 * homology_n_bulges)
-  max_align_score <- augmented_result_df$align_score |> max(na.rm = TRUE)
-  augmented_result_df$align_score[is.na(augmented_result_df$align_score)] <- max_align_score + 1
-  ihw_fit <- IHW::ihw(pvalues = augmented_result_df$p_value, covariates = -augmented_result_df$align_score,
-                      alpha = multiplicity_alpha, nbins = 4)
-  w <- IHW::weights(ihw_fit)
-  augmented_result_df$p_weighted <- augmented_result_df$p_value/w
-  return(augmented_result_df)
-}
-
-
 #' Boost p-values (Genovese)
 #'
 #' @param augmented_result_df result data frame with homology annotations
@@ -26,12 +12,18 @@ boost_p_values_ihw <- function(augmented_result_df, multiplicity_alpha = 0.2) {
 #'  dplyr::select(chr, coord, strand, umi_count, replicate_id) |>
 #'  cluster_loci()
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
-#' annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df) |> dplyr::filter(homology_has_hit)
+#' annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df, homology_df) # |> dplyr::filter(homology_has_hit)
 #' Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
 #' augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
+#'
+#' # substitution/bulge/distance weighting
 #' weighted_result_df <- boost_p_values_genovese(augmented_result_df)
 #' qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
-boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.1, gamma_align = NULL, gamma_distance = NULL) {
+#'
+#' # cfd weighting
+#' weighted_result_df <- boost_p_values_genovese_cfd(augmented_result_df)
+#' qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
+boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.5, gamma_align = NULL, gamma_distance = NULL) {
   # get the alignment score
   MAX_ALIGN_SCORE <- 9L
   align_score <- augmented_result_df$homology_n_mismatches + 2L * augmented_result_df$homology_n_bulges
@@ -61,4 +53,56 @@ boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.
                   nominated_window = nominated_window_weighted) |>
     dplyr::arrange(p_value_weighted)
   return(out)
+}
+
+
+boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha = 0.5, prior_strength = "aggressive") {
+  if (prior_strength == "aggressive") {
+    cfd_weights <- c(0.01, 0.05, 0.1, 0.25, 0.5, 1)
+    distance_weights <- c(1, 0.5, 0.3, 0.1, 0.05, 0.01)
+  } else if (prior_strength == "moderate") {
+    cfd_weights <- c(0.05, 0.1, 0.2, 0.5, 0.8, 1)
+    distance_weights <- c(1, 0.75, 0.5, 0.3, 0.1, 0.05)
+  } else if (prior_strength == "mild") {
+    cfd_weights <- c(0.25, 0.4, 0.6, 0.8, 0.9, 1)
+    distance_weights <- c(1, 0.9, 0.8, 0.6, 0.4, 0.25)
+  } else {
+    stop("`prior_strength` not recognized. Choose one of `mild`, `moderate`, `aggressive`.")
+  }
+
+  # cfd weighting
+  cfd_breaks <- c(1, 0.8, 0.4, 0.2, 0.05, 0.01, -1)
+  cfd_cuts <- cut(x = augmented_result_df$homology_cfd, breaks = cfd_breaks)
+  my_cfd_weights <- cfd_weights[as.integer(cfd_cuts)]
+
+  # distance weighting
+  distance_breaks <- c(-1, 0, 1, 2, 4, 6, Inf)
+  distance_cuts <- cut(augmented_result_df$homology_modal_base_cut_distance, breaks = distance_breaks)
+  my_distance_weights <- distance_weights[as.integer(distance_cuts)]
+
+  # no crispritz_hit
+  no_crispritz_hit_weight <- min(cfd_weights) * min(distance_weights)
+
+  # final (normalized) weights
+  w <- my_cfd_weights * my_distance_weights
+  w[!augmented_result_df$homology_has_hit] <- no_crispritz_hit_weight
+  w_tilde <- w/mean(w)
+
+  # compute weighted p-values and discovery set
+  p_value_weighted <- augmented_result_df$p_value/w_tilde
+  q_value_weighted <- p.adjust(p = p_value_weighted, method = "BH")
+  nominated_window_weighted <- q_value_weighted < multiplicity_alpha
+
+  out <- augmented_result_df |>
+    dplyr::mutate(p_value_unweighted = p_value,
+                  nominated_window_unweighted = nominated_window,
+                  p_value = pmin(1, p_value_weighted),
+                  p_value_weight = w_tilde,
+                  nominated_window = nominated_window_weighted) |>
+    dplyr::arrange(p_value)
+}
+
+
+compute_cfd_weights <- function(cfds, distances, prior_strength = "aggressive") {
+
 }

@@ -6,7 +6,7 @@
 \usage{
 boost_p_values_genovese(
   augmented_result_df,
-  multiplicity_alpha = 0.1,
+  multiplicity_alpha = 0.5,
   gamma_align = NULL,
   gamma_distance = NULL
 )
@@ -30,9 +30,15 @@ clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combin
  dplyr::select(chr, coord, strand, umi_count, replicate_id) |>
  cluster_loci()
 homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
-annotated_clustered_count_df <- annotate_clustered_count_df_with_homology(clustered_count_df, homology_df) |> dplyr::filter(homology_has_hit)
+annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df, homology_df) # |> dplyr::filter(homology_has_hit)
 Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
 augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
+
+# substitution/bulge/distance weighting
 weighted_result_df <- boost_p_values_genovese(augmented_result_df)
+qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
+
+# cfd weighting
+weighted_result_df <- boost_p_values_genovese_cfd(augmented_result_df)
 qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
 }
