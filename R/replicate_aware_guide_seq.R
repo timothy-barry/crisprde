@@ -424,9 +424,10 @@ cluster_loci <- function(count_df, thresh = 100L, padding = 35L) {
 #'
 #' Takes the output of `cluster_loci()` as input; outputs a count matrix for statistical modeling
 #'
-#' @param clustered_count_df output of `cluster_loci()`, with columns `replicate_id`, `window`, and `umi_count`.
+#' @param clustered_count_df output of `cluster_loci()`, with columns `window`, `umi_count`, and the columns specified by `channel_axes`.
+#' @param channel_axes columns whose unique tuples define evidence channels.
 #'
-#' @returns an integer matrix with replicates in the rows and windows in the columns. An entry of the matrix indicates the number of UMIs observed within a given window and replicate.
+#' @returns an integer matrix with evidence channels in the rows and windows in the columns. An entry of the matrix indicates the number of UMIs observed within a given window and channel.
 #' @export
 #'
 #' @examples
@@ -436,25 +437,26 @@ cluster_loci <- function(count_df, thresh = 100L, padding = 35L) {
 #'  dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id)
 #' clustered_count_df <- cluster_loci(count_df)
 #' Y_mat <- construct_replicate_count_table(clustered_count_df)
-construct_replicate_count_table <- function(clustered_count_df) {
-  # if primer_type is present, append that to rep-id
-  if ("primer_type" %in% colnames(clustered_count_df)) {
-    clustered_count_df <- clustered_count_df |> dplyr::mutate(replicate_id = paste0(replicate_id, "-", primer_type), primer_type = NULL)
-  }
-  # sum over UMIs within a given (window, replicate) pair
+construct_replicate_count_table <- function(clustered_count_df, channel_axes = c("replicate_id", "primer_type")) {
+  x <- lapply(X = channel_axes, FUN = function(col_name) {
+    clustered_count_df[[col_name]] |> as.character()
+  })
+  clustered_count_df$channel_id <- Reduce(f = function(a, b) paste0(a, "-", b), x = x)
+
+  # sum over UMIs within a given (window, channel) pair
   collapsed_count_df <- clustered_count_df |>
-    dplyr::group_by(replicate_id, window) |>
+    dplyr::group_by(channel_id, window) |>
     dplyr::summarize(umi_count = sum(umi_count), .groups = "drop") |>
-    dplyr::arrange(replicate_id, window)
+    dplyr::arrange(channel_id, window)
 
   # construct Y_mat
-  replicate_idx <- match(x = collapsed_count_df$replicate_id, unique(collapsed_count_df$replicate_id))
+  replicate_idx <- match(x = collapsed_count_df$channel_id, unique(collapsed_count_df$channel_id))
   group_idx <- match(x = collapsed_count_df$window, unique(collapsed_count_df$window))
   Y_mat <- Matrix::sparseMatrix(i = replicate_idx,
                                 j = group_idx,
                                 x = collapsed_count_df$umi_count) |>
     as.matrix()
-  rownames(Y_mat) <- unique(collapsed_count_df$replicate_id)
+  rownames(Y_mat) <- unique(collapsed_count_df$channel_id)
   colnames(Y_mat) <- unique(collapsed_count_df$window)
   return(Y_mat)
 }
