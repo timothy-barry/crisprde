@@ -441,7 +441,7 @@ construct_replicate_count_table <- function(clustered_count_df, channel_axes = c
   x <- lapply(X = channel_axes, FUN = function(col_name) {
     clustered_count_df[[col_name]] |> as.character()
   })
-  clustered_count_df$channel_id <- Reduce(f = function(a, b) paste0(a, "-", b), x = x)
+  clustered_count_df$channel_id <- Reduce(f = function(a, b) paste0(a, "_", b), x = x)
 
   # sum over UMIs within a given (window, channel) pair
   collapsed_count_df <- clustered_count_df |>
