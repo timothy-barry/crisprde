@@ -43,5 +43,4 @@ dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 cluster_loci()
 annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
   homology_df = homology_df, n_run_df = n_run_df)
-
 }

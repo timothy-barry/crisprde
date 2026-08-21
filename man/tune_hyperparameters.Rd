@@ -14,6 +14,7 @@ tune_hyperparameters(
   max_false_discs = 5L,
   annotated_clustered_count_df_trt = NULL,
   annotated_clustered_count_df_cntrl = NULL,
+  weight_p_values = TRUE,
   lambda_default = 20,
   gamma_align = NULL,
   gamma_distance = NULL,

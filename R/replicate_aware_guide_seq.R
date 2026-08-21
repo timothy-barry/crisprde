@@ -684,7 +684,6 @@ load_n_run_bed <- function(n_run_bed_file_path) {
 #' cluster_loci()
 #' annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
 #'   homology_df = homology_df, n_run_df = n_run_df)
-#'
 #' @export
 annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL,
                                         add_n_occupied_bases_and_width = TRUE) {

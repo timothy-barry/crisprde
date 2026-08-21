@@ -18,18 +18,32 @@ a ggplot of the local UMI count distribution
 Make local scatterplot
 }
 \examples{
-caliper_res <- readRDS("/Users/timbarry/research_offsite/projects/crisprde-project/guideseq/hyperparam_res_list.rds")
-
-
-# plus strand PAM
-res_df <- caliper_res$elane_cd34_wtcas9_e3sa$tuning_res$selected_trt_run$res_df
-window_id <- res_df |> dplyr::slice(1L) |> dplyr::pull(window)
-annotated_df_sub <- caliper_res$elane_cd34_wtcas9_e3sa$annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
-p <- make_local_scatterplot(annotated_df_sub)
+caliper_res <- readRDS("/Users/timbarry/research_offsite/projects/crisprde-project/guideseq/caliper_res_list_with_p_val_weighting.rds")
+res_df <- caliper_res$bcl11a_293t_1620_sprycas9$tuning_res$selected_trt_run$res_df
+annotated_clustered_count_df_trt <- caliper_res$bcl11a_293t_1620_sprycas9$annotated_clustered_count_df_trt
 
 # minus strand PAM
-res_df <- caliper_res$bcl11a_293t_1620_sprycas9$tuning_res$selected_trt_run$res_df
 window_id <- res_df |> dplyr::slice(1L) |> dplyr::pull(window)
-annotated_df_sub <- caliper_res$bcl11a_293t_1620_sprycas9$annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
+annotated_df_sub <- annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
+p <- make_local_scatterplot(annotated_df_sub)
+
+# "-" in rna alignment, minus starnd PAM
+window_id <- "chr10:130663775-130663848"
+annotated_df_sub <- annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
+p <- make_local_scatterplot(annotated_df_sub)
+
+# "-" in dna alignment, minus strand PAM
+window_id <- "chr3:3330681-3330751"
+annotated_df_sub <- annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
+p <- make_local_scatterplot(annotated_df_sub)
+
+# "-" in dna alignment, plus strand PAM
+window_id <- "chr2:8943413-8943485"
+annotated_df_sub <- annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
+p <- make_local_scatterplot(annotated_df_sub)
+
+# plus strand pam
+window_id <- "chr5:56529490-56529575"
+annotated_df_sub <- annotated_clustered_count_df_trt |> dplyr::filter(window == window_id)
 p <- make_local_scatterplot(annotated_df_sub)
 }

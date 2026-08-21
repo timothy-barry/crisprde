@@ -4,13 +4,18 @@
 \alias{construct_replicate_count_table}
 \title{Construct replicate count table}
 \usage{
-construct_replicate_count_table(clustered_count_df)
+construct_replicate_count_table(
+  clustered_count_df,
+  channel_axes = c("replicate_id", "primer_type")
+)
 }
 \arguments{
-\item{clustered_count_df}{output of \code{cluster_loci()}, with columns \code{replicate_id}, \code{window}, and \code{umi_count}.}
+\item{clustered_count_df}{output of \code{cluster_loci()}, with columns \code{window}, \code{umi_count}, and the columns specified by \code{channel_axes}.}
+
+\item{channel_axes}{columns whose unique tuples define evidence channels.}
 }
 \value{
-an integer matrix with replicates in the rows and windows in the columns. An entry of the matrix indicates the number of UMIs observed within a given window and replicate.
+an integer matrix with evidence channels in the rows and windows in the columns. An entry of the matrix indicates the number of UMIs observed within a given window and channel.
 }
 \description{
 Takes the output of \code{cluster_loci()} as input; outputs a count matrix for statistical modeling
