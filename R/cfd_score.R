@@ -1,4 +1,4 @@
-calulate_cfd_score <- function(homology_dna, homology_gRNA, homology_has_hit) {
+calculate_cfd_score <- function(homology_dna, homology_gRNA, homology_has_hit) {
   mismatch_scores <- readRDS(system.file("extdata", "cfd_mismatch_scores.rds", package = "crisprde"))
 
   revcom <- function(s) {

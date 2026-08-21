@@ -16,17 +16,6 @@
 #' Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
 #' augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
 #'
-#' # compute alignment scores/weights
-#' alignment_scores <- compute_alignment_scores(
-#'   cfds = augmented_result_df$homology_cfd,
-#'   distances = augmented_result_df$homology_modal_base_cut_distance,
-#'   has_hits = augmented_result_df$homology_has_hit
-#'   )
-#'
-#' # substitution/bulge/distance weighting
-#' weighted_result_df <- boost_p_values_genovese(augmented_result_df)
-#' qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
-#'
 #' # cfd weighting
 #' weighted_result_df <- boost_p_values_genovese_cfd(augmented_result_df)
 #' qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
@@ -65,9 +54,10 @@ boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.
 
 boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha = 0.5, prior_strength = "aggressive") {
   w <- compute_alignment_scores(cfds = augmented_result_df$homology_cfd,
-                                distances = augmented_result_df$homology_modal_base_cut_distance,
-                                has_hits = augmented_result_df$homology_has_hit,
-                                prior_strength = prior_strength)
+                           distances = augmented_result_df$homology_modal_base_cut_distance,
+                           prior_strength = prior_strength)
+  prior_weights <- get_prior_weights(prior_strength = prior_strength)
+  w[is.na(w)] <- min(prior_weights$cfd_weights) * min(prior_weights$distance_weights)
   w_tilde <- w/mean(w)
 
   # compute weighted p-values and discovery set
@@ -84,8 +74,27 @@ boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha 
     dplyr::arrange(p_value)
 }
 
+compute_alignment_scores <- function(cfds, distances, prior_strength = "aggressive") {
+  prior_weights <- get_prior_weights(prior_strength = prior_strength)
+  cfd_weights <- prior_weights$cfd_weights
+  distance_weights <- prior_weights$distance_weights
 
-compute_alignment_scores <- function(cfds, distances, has_hits, prior_strength = "aggressive") {
+  # cfd weighting
+  cfd_breaks <- c(1, 0.8, 0.4, 0.2, 0.05, 0.01, -1)
+  cfd_cuts <- cut(x = cfds, breaks = cfd_breaks)
+  my_cfd_weights <- cfd_weights[as.integer(cfd_cuts)]
+
+  # distance weighting
+  distance_breaks <- c(-1, 0, 1, 2, 4, 6, Inf)
+  distance_cuts <- cut(distances, breaks = distance_breaks)
+  my_distance_weights <- distance_weights[as.integer(distance_cuts)]
+
+  # final (normalized) weights
+  w <- my_cfd_weights * my_distance_weights
+  return(w)
+}
+
+get_prior_weights <- function(prior_strength = "aggressive") {
   if (prior_strength == "aggressive") {
     cfd_weights <- c(0.01, 0.05, 0.1, 0.25, 0.5, 1)
     distance_weights <- c(1, 0.5, 0.3, 0.1, 0.05, 0.01)
@@ -98,22 +107,5 @@ compute_alignment_scores <- function(cfds, distances, has_hits, prior_strength =
   } else {
     stop("`prior_strength` not recognized. Choose one of `mild`, `moderate`, `aggressive`.")
   }
-
-  # cfd weighting
-  cfd_breaks <- c(1, 0.8, 0.4, 0.2, 0.05, 0.01, -1)
-  cfd_cuts <- cut(x = cfds, breaks = cfd_breaks)
-  my_cfd_weights <- cfd_weights[as.integer(cfd_cuts)]
-
-  # distance weighting
-  distance_breaks <- c(-1, 0, 1, 2, 4, 6, Inf)
-  distance_cuts <- cut(distances, breaks = distance_breaks)
-  my_distance_weights <- distance_weights[as.integer(distance_cuts)]
-
-  # no crispritz_hit
-  no_crispritz_hit_weight <- min(cfd_weights) * min(distance_weights)
-
-  # final (normalized) weights
-  w <- my_cfd_weights * my_distance_weights
-  w[!has_hits] <- no_crispritz_hit_weight
-  return(w)
+  out <- list(cfd_weights = cfd_weights, distance_weights = distance_weights)
 }

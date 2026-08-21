@@ -16,8 +16,7 @@ tune_hyperparameters(
   annotated_clustered_count_df_cntrl = NULL,
   weight_p_values = TRUE,
   lambda_default = 20,
-  gamma_align = NULL,
-  gamma_distance = NULL,
+  prior_strength = "aggressive",
   verbose = FALSE
 )
 }

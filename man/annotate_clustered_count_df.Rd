@@ -8,7 +8,7 @@ annotate_clustered_count_df(
   clustered_count_df,
   homology_df = NULL,
   n_run_df = NULL,
-  add_n_occupied_bases_and_width = TRUE
+  encode_blacklist_df = NULL
 )
 }
 \arguments{
@@ -17,12 +17,15 @@ annotate_clustered_count_df(
 \item{homology_df}{optional output of \code{load_crispritz_output()}; if supplied, windows are annotated for overlap with CRISPRitz hits}
 
 \item{n_run_df}{optional output of \code{load_n_run_bed()}; if supplied, windows are annotated for overlap with N-runs}
+
+\item{encode_blacklist_df}{optional output of \code{load_encode_blacklist_bed()}; if supplied, windows are annotated for overlap with ENCODE blacklist regions}
 }
 \description{
-Add colummns:
+Add columns:
 \itemize{
 \item \code{homology_has_hit} (indicating whether there is a homology hit inside the window)
 \item \code{overlaps_n_run} (indicating whether the window overlaps an N-run in the reference genome)
+\item \code{overlaps_encode_blacklist} (indicating whether the window overlaps an ENCODE blacklist region)
 \item \code{homology_n_mismatches} (indicating the number of mismatches between aligned spacer and protospacer sequence)
 \item \code{homology_n_bulges} (indicating number of bulges between aligned spacer and protospacer sequence)
 \item \code{homology_bulge_type} (indicating the CRISPRitz bulge type)
@@ -34,13 +37,14 @@ Add colummns:
 }
 }
 \examples{
-homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_bcl11a/1620_crispritz_spRY_bcl11a_windows.hg38.targets.txt")
 n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
-elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
-dplyr::filter(treated & cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2 & chr != "chrM") |>
+encode_blacklist_df <- load_encode_blacklist_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38-blacklist.v2.bed")
+bcl11a_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_bcl11a/")
+clustered_count_df <- readRDS(paste0(bcl11a_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
+dplyr::filter(grna == "1620" & treated & chr != "chrM") |>
 dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 cluster_loci()
 annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
-  homology_df = homology_df, n_run_df = n_run_df)
+  homology_df = homology_df, n_run_df = n_run_df, encode_blacklist_df = encode_blacklist_df)
 }

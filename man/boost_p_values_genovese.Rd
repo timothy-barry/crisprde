@@ -34,17 +34,6 @@ annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df, 
 Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
 augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
 
-# compute alignment scores/weights
-alignment_scores <- compute_alignment_scores(
-  cfds = augmented_result_df$homology_cfd,
-  distances = augmented_result_df$homology_modal_base_cut_distance,
-  has_hits = augmented_result_df$homology_has_hit
-  )
-
-# substitution/bulge/distance weighting
-weighted_result_df <- boost_p_values_genovese(augmented_result_df)
-qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
-
 # cfd weighting
 weighted_result_df <- boost_p_values_genovese_cfd(augmented_result_df)
 qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
