@@ -282,7 +282,7 @@ score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, mu_theta_hat_mat, 
   rownames(res_df) <- NULL
   if (!is.null(annotated_clustered_count_df)) {
     right_df <- annotated_clustered_count_df |>
-      dplyr::select(window, dplyr::starts_with(c("homology", "window"))) |>
+      dplyr::select(window, dplyr::starts_with(c("homology", "window", "overlaps"))) |>
       dplyr::filter(window %in% res_df$window) |>
       dplyr::distinct()
     res_df <- dplyr::left_join(res_df, right_df, by = "window")
@@ -680,10 +680,13 @@ load_encode_blacklist_bed <- function(encode_blacklist_file_path) {
 #' - `homology_n_bulges` (indicating number of bulges between aligned spacer and protospacer sequence)
 #' - `homology_bulge_type` (indicating the CRISPRitz bulge type)
 #' - `homology_cfd` (indicating the CFD-like homology score)
-#' - `homology_posit` (indicating the position of the start of the protospacer)
+#' - `homology_chromosome` (chromosome of the aligned protospacer)
 #' - `homology_strand` (indicating whether the protospacer is on the plus or minus strand)
 #' - `homology_dna` (aligned protospacer sequence)
 #' - `homology_gRNA` (aligned spacer sequence)
+#' - `homology_cut_start` and `homology_cut_end` (predicted cut-site coordinates)
+#' - `homology_modal_base_cut_distance` (distance between the modal base and predicted cut site)
+#' - `homology_alignment_score` (combined homology and cut-site-distance score)
 #'
 #' @param clustered_count_df output of `cluster_loci()`
 #' @param homology_df optional output of `load_crispritz_output()`; if supplied, windows are annotated for overlap with CRISPRitz hits
@@ -762,38 +765,47 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
                                                   subject = homology_gr,
                                                   ignore.strand = TRUE)
     if (length(crispritz_hits) == 0L) {
-      stop("There is no overlap between the CRISPRitz hits and GUIDE-seq windows. Rerun this function without passing `homology_df`.")
-    }
-    crispritz_subject_hits <- S4Vectors::subjectHits(crispritz_hits)
-    crispritz_query_hits <- S4Vectors::queryHits(crispritz_hits)
-    homology_df_sub <- homology_df[crispritz_subject_hits,] |>
-      dplyr::mutate(homology_cut_start = posit + 1L + ifelse(strand == "+", protospacer_width - 4L, 5L),
-                    homology_cut_end = posit + 1L + ifelse(strand == "+", protospacer_width - 3L, 6L)) |>
-      dplyr::mutate(homology_cfd = calculate_cfd_score(homology_dna = dna, homology_gRNA = gRNA, homology_has_hit = TRUE))
+      window_df <- window_df |>
+        dplyr::mutate(homology_has_hit = FALSE,
+                      homology_bulge_type = NA_character_, homology_gRNA = NA_character_,
+                      homology_dna = NA_character_, homology_chromosome = NA_character_,
+                      homology_strand = NA_character_, homology_n_mismatches = NA_real_,
+                      homology_n_bulges = NA_real_, homology_cut_start = NA_real_,
+                      homology_cut_end = NA_real_, homology_cfd = NA_real_,
+                      homology_modal_base_cut_distance = NA_real_, homology_alignment_score = NA_real_)
+    } else {
+      crispritz_subject_hits <- S4Vectors::subjectHits(crispritz_hits)
+      crispritz_query_hits <- S4Vectors::queryHits(crispritz_hits)
+      homology_df_sub <- homology_df[crispritz_subject_hits,] |>
+        dplyr::mutate(homology_cut_start = posit + 1L + ifelse(strand == "+", protospacer_width - 4L, 5L),
+                      homology_cut_end = posit + 1L + ifelse(strand == "+", protospacer_width - 3L, 6L)) |>
+        dplyr::mutate(homology_cfd = calculate_cfd_score(homology_dna = dna, homology_gRNA = gRNA, homology_has_hit = TRUE))
 
-    # for each window (containing a CRISPRitz hit), score each alignment and return the best
-    window_idxs_with_hit <- unique(crispritz_query_hits)
-    homology_df <- lapply(X = window_idxs_with_hit, FUN = function(i) {
-      curr_window <- window_df[i,]
-      curr_crispritz_candidates <- homology_df_sub[crispritz_query_hits == i,] |>
-        dplyr::mutate(homology_modal_base_cut_distance = pmin(abs(curr_window$modal_base - homology_cut_start),
-                                                                 abs(curr_window$modal_base - homology_cut_end))) |>
-        dplyr::mutate(homology_alignment_score = compute_alignment_scores(cfds = homology_cfd, distances = homology_modal_base_cut_distance))
-      # find the alignment with the best score, tie-breaking by distance
-      best_alignment <- curr_crispritz_candidates |>
-        dplyr::arrange(dplyr::desc(homology_alignment_score), homology_modal_base_cut_distance, dplyr::desc(homology_cfd)) |>
-        dplyr::slice(1L) |>
-        dplyr::select(bulge_type, gRNA, dna, chromosome, strand, n_mismatches, n_bulges,
-                      homology_cut_start, homology_cut_end, homology_cfd, homology_modal_base_cut_distance,
-                      homology_alignment_score) |>
-        dplyr::rename(homology_bulge_type = bulge_type, homology_gRNA = gRNA, homology_dna = dna,
-                      homology_chromosome = chromosome, homology_strand = strand, homology_n_mismatches = n_mismatches,
-                      homology_n_bulges = n_bulges) |>
-        dplyr::mutate(window = curr_window$window)
-    }) |> data.table::rbindlist()
-    window_df <- dplyr::left_join(window_df, homology_df, by = "window")
+      # for each window (containing a CRISPRitz hit), score each alignment and return the best
+      window_idxs_with_hit <- unique(crispritz_query_hits)
+      homology_df <- lapply(X = window_idxs_with_hit, FUN = function(i) {
+        curr_window <- window_df[i,]
+        curr_crispritz_candidates <- homology_df_sub[crispritz_query_hits == i,] |>
+          dplyr::mutate(homology_modal_base_cut_distance = pmin(abs(curr_window$modal_base - homology_cut_start),
+                                                                abs(curr_window$modal_base - homology_cut_end))) |>
+          dplyr::mutate(homology_alignment_score = compute_alignment_scores(cfds = homology_cfd, distances = homology_modal_base_cut_distance))
+        # find the alignment with the best score, tie-breaking by distance
+        best_alignment <- curr_crispritz_candidates |>
+          dplyr::arrange(dplyr::desc(homology_alignment_score), homology_modal_base_cut_distance, dplyr::desc(homology_cfd)) |>
+          dplyr::slice(1L) |>
+          dplyr::select(bulge_type, gRNA, dna, chromosome, strand, n_mismatches, n_bulges,
+                        homology_cut_start, homology_cut_end, homology_cfd, homology_modal_base_cut_distance,
+                        homology_alignment_score) |>
+          dplyr::rename(homology_bulge_type = bulge_type, homology_gRNA = gRNA, homology_dna = dna,
+                        homology_chromosome = chromosome, homology_strand = strand, homology_n_mismatches = n_mismatches,
+                        homology_n_bulges = n_bulges) |>
+          dplyr::mutate(window = curr_window$window)
+      }) |> data.table::rbindlist()
+      window_df <- dplyr::left_join(window_df, homology_df, by = "window")
+    }
   }
 
+  # prepare final output
   window_df <- window_df |> dplyr::select(-min_cluster_coord, -max_cluster_coord, -chr)
   clustered_count_df <- dplyr::left_join(x = clustered_count_df, y = window_df, by = "window")
   if (!is.null(homology_df)) {

@@ -30,10 +30,13 @@ Add columns:
 \item \code{homology_n_bulges} (indicating number of bulges between aligned spacer and protospacer sequence)
 \item \code{homology_bulge_type} (indicating the CRISPRitz bulge type)
 \item \code{homology_cfd} (indicating the CFD-like homology score)
-\item \code{homology_posit} (indicating the position of the start of the protospacer)
+\item \code{homology_chromosome} (chromosome of the aligned protospacer)
 \item \code{homology_strand} (indicating whether the protospacer is on the plus or minus strand)
 \item \code{homology_dna} (aligned protospacer sequence)
 \item \code{homology_gRNA} (aligned spacer sequence)
+\item \code{homology_cut_start} and \code{homology_cut_end} (predicted cut-site coordinates)
+\item \code{homology_modal_base_cut_distance} (distance between the modal base and predicted cut site)
+\item \code{homology_alignment_score} (combined homology and cut-site-distance score)
 }
 }
 \examples{
