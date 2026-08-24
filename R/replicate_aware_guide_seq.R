@@ -731,6 +731,9 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
       seqnames = df_in$chromosome,
       ranges = IRanges::IRanges(start = df_in$start, end = df_in$end)
     )
+    seqlevels <- union(GenomeInfoDb::seqlevels(window_gr), GenomeInfoDb::seqlevels(gr_in))
+    GenomeInfoDb::seqlevels(window_gr) <- seqlevels
+    GenomeInfoDb::seqlevels(gr_in) <- seqlevels
     hits <- GenomicRanges::findOverlaps(query = window_gr, subject = gr_in,
                                         ignore.strand = TRUE)
     window_df[[colname]] <- FALSE

@@ -17,4 +17,5 @@ Imports:
   IRanges,
   stats,
   MASS,
+  GenomeInfoDb,
   GenomeInfoDbData
