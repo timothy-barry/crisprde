@@ -24,6 +24,10 @@
 #' @param B Number of Monte Carlo samples used to construct the confidence band.
 #' @param n_conf_windows Number of smallest-p-value ranks included in the
 #'   confidence band.
+#' @param n_bulk_points Number of points retained beyond the confidence band,
+#'   selected at approximately even intervals on the log-rank scale.
+#' @param annotation_labels Optional character vector aligned with
+#'   `weighted_p_vals`. Nonmissing values are plotted as annotations.
 #'
 #' @return A `ggplot` object.
 #' @export
@@ -34,14 +38,17 @@
 #' w_tilde <- w / mean(w)
 #' weighted_p_vals <- runif(n = 5000, min = 0, max = 1) / w_tilde
 #' qq_plot <- make_weighted_qq_plot(weighted_p_vals, w_tilde, B = 100L)
-make_weighted_qq_plot <- function(weighted_p_vals, weights, point_col = "black", B = 10000L, n_conf_windows = 500L) {
+make_weighted_qq_plot <- function(weighted_p_vals, weights, point_col = "black", B = 10000L, n_conf_windows = 500L, n_bulk_points = 1500L, annotation_labels = NULL) {
   # compute the theoretical null quantiles
   null_qq_quantiles <- compute_weighted_null_qq_quantiles(weights)
 
   # construct data frame
-  qq_df <- data.frame(rank = seq_along(null_qq_quantiles),
-                      theoretical_quantile = null_qq_quantiles, # quantiles of the average null distribution
-                      observed_quantile = sort(pmin(weighted_p_vals, 1))) # order statistics of the p-values
+  if (is.null(annotation_labels)) annotation_labels <- rep(NA_character_, length(weighted_p_vals))
+  qq_df <- data.frame(observed_quantile = pmin(weighted_p_vals, 1),
+                      annotation_label = annotation_labels) |>
+    dplyr::arrange(observed_quantile) |>
+    dplyr::mutate(rank = seq_along(null_qq_quantiles),
+                  theoretical_quantile = null_qq_quantiles) # quantiles of the average null distribution
 
   # get confidence band df; update qq_df
   confidence_band_df <- compute_monte_carlo_confidence_band(weights = weights, B = B, n_conf_windows = n_conf_windows)
@@ -50,8 +57,17 @@ make_weighted_qq_plot <- function(weighted_p_vals, weights, point_col = "black",
   # filter out weighted p-value 1 points
   qq_df <- qq_df |> dplyr::filter(observed_quantile < 1)
 
+  bulk_ranks <- qq_df$rank[qq_df$rank > n_conf_windows]
+  if (length(bulk_ranks) > n_bulk_points) {
+    bulk_ranks <- unique(round(exp(seq(log(min(bulk_ranks)),
+                                       log(max(bulk_ranks)),
+                                       length.out = n_bulk_points))))
+  }
+  point_df <- qq_df |>
+    dplyr::filter(rank <= n_conf_windows | rank %in% bulk_ranks | !is.na(annotation_label))
+
   # make plot
-  p <- ggplot2::ggplot(data = qq_df,
+  p <- ggplot2::ggplot(data = point_df,
                        mapping = ggplot2::aes(x = theoretical_quantile, y = observed_quantile)) +
     ggplot2::geom_ribbon(data = qq_df |> dplyr::filter(!is.na(lower_ci), !is.na(upper_ci)),
                          mapping = ggplot2::aes(x = theoretical_quantile,
@@ -59,6 +75,9 @@ make_weighted_qq_plot <- function(weighted_p_vals, weights, point_col = "black",
                          inherit.aes = FALSE, fill = "grey85") +
     ggplot2::geom_abline(color = "black") +
     ggplot2::geom_point(size = 0.8, col = point_col) +
+    ggplot2::geom_text(data = function(data) dplyr::filter(data, !is.na(annotation_label)),
+                       mapping = ggplot2::aes(label = annotation_label),
+                       color = "blue", angle = 90, hjust = 1.05, vjust = 0.5, size = 2.5) +
     ggplot2::theme_bw() +
     ggplot2::scale_x_continuous(trans = revlog_trans(base = 10)) +
     ggplot2::scale_y_continuous(trans = revlog_trans(base = 10)) +
@@ -85,6 +104,7 @@ compute_monte_carlo_confidence_band <- function(weights, B = 5000L, n_conf_windo
   return(out)
 }
 
+# saveRDS(object = weights, file = "~/example_weights.rds")
 compute_weighted_null_qq_quantiles <- function(weights) {
   m <- length(weights)
   weight_groups <- rle(sort(weights[weights > 1], decreasing = TRUE))
@@ -92,13 +112,14 @@ compute_weighted_null_qq_quantiles <- function(weights) {
   unsaturated_weight <- c(sum(weights), sum(weights) - cumsum(weight_groups$values * weight_groups$lengths))
   breakpoints <- c(0, 1 / weight_groups$values)
   cdf_breakpoints <- (saturated_n + breakpoints * unsaturated_weight) / m
+  cdf_breakpoints <- cummax(cdf_breakpoints)
   cdf_limit <- (tail(saturated_n, 1L) + tail(unsaturated_weight, 1L)) / m
 
   ranks <- seq_len(m)
   probabilities <- ranks / m
   inverse_cdf <- rep(1, m)
   below_jump <- probabilities < cdf_limit
-  segments <- findInterval(probabilities[below_jump], cdf_breakpoints)
+  segments <- findInterval(x = probabilities[below_jump], vec = cdf_breakpoints)
   inverse_cdf[below_jump] <- (ranks[below_jump] - saturated_n[segments]) /
     unsaturated_weight[segments]
   return(inverse_cdf)

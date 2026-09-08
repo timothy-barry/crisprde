@@ -9,7 +9,9 @@ make_weighted_qq_plot(
   weights,
   point_col = "black",
   B = 10000L,
-  n_conf_windows = 500L
+  n_conf_windows = 500L,
+  n_bulk_points = 1500L,
+  annotation_labels = NULL
 )
 }
 \arguments{
@@ -25,6 +27,12 @@ distribution. These are typically normalized to have mean 1.}
 
 \item{n_conf_windows}{Number of smallest-p-value ranks included in the
 confidence band.}
+
+\item{n_bulk_points}{Number of points retained beyond the confidence band,
+selected at approximately even intervals on the log-rank scale.}
+
+\item{annotation_labels}{Optional character vector aligned with
+\code{weighted_p_vals}. Nonmissing values are plotted as annotations.}
 }
 \value{
 A \code{ggplot} object.
