@@ -818,3 +818,40 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
 
   return(clustered_count_df)
 }
+
+
+remove_duplicate_umis_with_shared_base <- function(count_df) {
+  count_df$row_id <- seq_len(nrow(count_df))
+  duplicated_umi_df <- data.frame(row_id = rep(count_df$row_id, lengths(count_df$umis)),
+                                  chr = rep(count_df$chr, lengths(count_df$umis)),
+                                  coord = rep(count_df$coord, lengths(count_df$umis)),
+                                  umi = unlist(count_df$umis, use.names = FALSE)) |>
+    dplyr::group_by(chr, coord) |>
+    dplyr::mutate(duplicated = duplicated(umi) | duplicated(umi, fromLast = TRUE)) |>
+    dplyr::ungroup() |>
+    dplyr::filter(duplicated)
+
+  # a list of duplicated umis, ordered by row
+  duplicated_umis_by_row <- split(x = duplicated_umi_df$umi, f = duplicated_umi_df$row_id)
+
+  # remove the duplicated umis
+  for (i in seq_along(duplicated_umis_by_row)) {
+    umi_to_remove <- duplicated_umis_by_row[[i]]
+    row_idx <- names(duplicated_umis_by_row[i]) |> as.integer()
+    curr_umi_vector <- count_df[[row_idx, "umis"]]
+    keep_v <- !(curr_umi_vector %in% umi_to_remove)
+
+    # update n_umis, umis, and reads per umi
+    count_df[[row_idx, "umi_count"]] <- sum(keep_v)
+    if (count_df[[row_idx, "umi_count"]] >= 1L) {
+      filtered_umi_vector <- curr_umi_vector[keep_v]
+      filtered_n_reads_per_umi <- count_df[[row_idx, "n_reads_per_umi"]][keep_v]
+      count_df[row_idx, umis := I(filtered_umi_vector)]
+      count_df[row_idx, n_reads_per_umi := I(filtered_n_reads_per_umi)]
+      count_df[row_idx, total_read_count := sum(filtered_n_reads_per_umi)]
+    }
+  }
+  count_df <- count_df |> dplyr::filter(umi_count >= 1L)
+  count_df$row_id <- NULL
+  return(count_df)
+}
