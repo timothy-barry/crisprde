@@ -104,6 +104,9 @@ get_prior_weights <- function(prior_strength = "aggressive") {
   } else if (prior_strength == "mild") {
     cfd_weights <- c(0.25, 0.4, 0.6, 0.8, 0.9, 1)
     distance_weights <- c(1, 0.9, 0.8, 0.6, 0.4, 0.25)
+  } else if (prior_strength == "extreme") {
+    cfd_weights <- c(1e-3, 0.05, 0.1, 0.25, 0.5, 1)
+    distance_weights <- c(1, 0.5, 0.3, 0.1, 0.05, 1e-3)
   } else {
     stop("`prior_strength` not recognized. Choose one of `mild`, `moderate`, `aggressive`.")
   }
