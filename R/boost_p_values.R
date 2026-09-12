@@ -54,8 +54,8 @@ boost_p_values_genovese <- function(augmented_result_df, multiplicity_alpha = 0.
 
 boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha = 0.5, prior_strength = "aggressive") {
   w <- compute_alignment_scores(cfds = augmented_result_df$homology_cfd,
-                           distances = augmented_result_df$homology_modal_base_cut_distance,
-                           prior_strength = prior_strength)
+                                distances = augmented_result_df$homology_modal_base_cut_distance,
+                                prior_strength = prior_strength)
   prior_weights <- get_prior_weights(prior_strength = prior_strength)
   w[is.na(w)] <- min(prior_weights$cfd_weights) * min(prior_weights$distance_weights)
   w_tilde <- w/mean(w)
