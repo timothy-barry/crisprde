@@ -577,7 +577,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                            multiplicity_alpha = multiplicity_alpha,
                                            annotated_clustered_count_df = annotated_clustered_count_df)
     if (weight_p_values && !is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
-      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese_cfd(multiplicity_alpha = multiplicity_alpha, prior_strength = prior_strength)
+      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese_cfd(multiplicity_alpha = multiplicity_alpha)
     }
     list(params = curr_row, res = fit_res)
   }
