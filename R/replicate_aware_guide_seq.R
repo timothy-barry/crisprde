@@ -503,12 +503,11 @@ construct_replicate_count_table <- function(clustered_count_df, channel_axes = c
 #' hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
 #'   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
 #'   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
-#'
 tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                  c_grid = c(5, 10, 25, 50, 100, 500, 1000),
                                  lambda_grid = c(0, 10, 25, 50, 100),
                                  incorporate_occupancy_info = TRUE,
-                                 multiplicity_alpha = 0.5, max_false_discs = 5L,
+                                 multiplicity_alpha = 0.5, max_false_discs = 5L, tau = 0.05,
                                  annotated_clustered_count_df_trt = NULL,
                                  annotated_clustered_count_df_cntrl = NULL,
                                  weight_p_values = TRUE,
@@ -577,7 +576,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                            multiplicity_alpha = multiplicity_alpha,
                                            annotated_clustered_count_df = annotated_clustered_count_df)
     if (weight_p_values && !is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
-      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese_cfd(multiplicity_alpha = multiplicity_alpha)
+      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese_cfd(multiplicity_alpha = multiplicity_alpha, tau = tau)
     }
     list(params = curr_row, res = fit_res)
   }

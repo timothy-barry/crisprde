@@ -19,7 +19,7 @@
 #' # cfd weighting
 #' weighted_result_df <- boost_p_values_genovese_cfd(augmented_result_df)
 #' qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
-boost_p_values_genovese_cfd <- function(augmented_result_df, tau = 0.02, multiplicity_alpha = 0.5) {
+boost_p_values_genovese_cfd <- function(augmented_result_df, tau = 0.05, multiplicity_alpha = 0.5) {
   cfd_thresh <- 0.001
   distance_thresh <- 8L
   w_tilde <- numeric(length = nrow(augmented_result_df))
