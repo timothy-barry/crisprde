@@ -19,7 +19,7 @@
 #' # cfd weighting
 #' weighted_result_df <- boost_p_values_genovese_cfd(augmented_result_df)
 #' qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
-boost_p_values_penalize_low_homology <- function(augmented_result_df, tau = 0.02, multiplicity_alpha = 0.5, prior_strength = "aggressive") {
+boost_p_values_genovese_cfd <- function(augmented_result_df, tau = 0.02, multiplicity_alpha = 0.5) {
   cfd_thresh <- 0.001
   distance_thresh <- 8L
   w_tilde <- numeric(length = nrow(augmented_result_df))
@@ -33,10 +33,7 @@ boost_p_values_penalize_low_homology <- function(augmented_result_df, tau = 0.02
   mult_constant <- nrow(augmented_result_df) - n_low_homology_sites * tau
 
   # compute the alignment weights among the high-homology windows
-  high_homology_df <- augmented_result_df |> dplyr::filter(!low_homology)
-  cfds <- high_homology_df$homology_cfd
-  distances <- high_homology_df$homology_modal_base_cut_distance
-  w <- compute_alignment_scores(cfds = cfds, distances = distances)
+  w <- augmented_result_df |> dplyr::filter(!low_homology) |> dplyr::pull(homology_alignment_score)
   w_tilde_high_homology <- w * mult_constant / sum(w)
 
   # attach weights to augmented_result_df
