@@ -2,12 +2,13 @@
 % Please edit documentation in R/boost_p_values.R
 \name{boost_p_values_genovese_cfd}
 \alias{boost_p_values_genovese_cfd}
-\title{Boost p-values (Genovese)}
+\title{Boost p-values using continuous homology weights}
 \usage{
 boost_p_values_genovese_cfd(
   augmented_result_df,
   multiplicity_alpha = 0.5,
-  prior_strength = "aggressive"
+  tau = 0.1,
+  gamma = log(10)/7
 )
 }
 \arguments{
@@ -15,25 +16,16 @@ boost_p_values_genovese_cfd(
 
 \item{multiplicity_alpha}{nominal FDR}
 
-\item{gamma_align}{tuning parameter controlling the homology-score penalty}
+\item{tau}{baseline normalized weight for zero homology scores, between zero and one}
 
-\item{gamma_distance}{tuning parameter controlling the modal-base-distance penalty}
+\item{gamma}{exponential distance-decay coefficient; use the same value for annotation}
 }
 \description{
-Boost p-values (Genovese)
+Boost p-values using continuous homology weights
 }
-\examples{
-elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-clustered_count_df <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
- dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & treated & replicate_id \%in\% 1:2 & chr != "chrM") |>
- dplyr::select(chr, coord, strand, umi_count, replicate_id) |>
- cluster_loci()
-homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
-annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df, homology_df) # |> dplyr::filter(homology_has_hit)
-Y_mat <- construct_replicate_count_table(annotated_clustered_count_df)
-augmented_result_df <- run_multireplicate_guideseq_method(Y_mat = Y_mat, lambda = 10, c_tukey_sigma = 50, multiplicity_alpha = 0.2, robust_fit = TRUE, incorporate_occupancy_info = TRUE, annotated_clustered_count_df = annotated_clustered_count_df)$res_df
-
-# cfd weighting
-weighted_result_df <- boost_p_values_genovese_cfd(augmented_result_df)
-qq_plot <- weighted_result_df |> make_guideseq_qq_plot()
+\details{
+Alignment scores are CFD * exp(-gamma * distance). Normalized weights
+are tau + A * score, where A = n * (1 - tau) / sum(score) and n is the
+number of windows. If all scores are zero, weights are one. Missing CFD
+or distance values contribute zero alignment score.
 }

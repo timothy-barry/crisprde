@@ -8,7 +8,8 @@ annotate_clustered_count_df(
   clustered_count_df,
   homology_df = NULL,
   n_run_df = NULL,
-  encode_blacklist_df = NULL
+  encode_blacklist_df = NULL,
+  gamma = log(10)/7
 )
 }
 \arguments{
@@ -19,6 +20,8 @@ annotate_clustered_count_df(
 \item{n_run_df}{optional output of \code{load_n_run_bed()}; if supplied, windows are annotated for overlap with N-runs}
 
 \item{encode_blacklist_df}{optional output of \code{load_encode_blacklist_bed()}; if supplied, windows are annotated for overlap with ENCODE blacklist regions}
+
+\item{gamma}{exponential distance-decay coefficient for ranking candidate alignments}
 }
 \description{
 Add columns:
@@ -38,6 +41,9 @@ Add columns:
 \item \code{homology_modal_base_cut_distance} (distance between the modal base and predicted cut site)
 \item \code{homology_alignment_score} (combined homology and cut-site-distance score)
 }
+}
+\details{
+Windows without a CRISPRitz hit have CFD zero, distance Inf, and alignment score zero.
 }
 \examples{
 homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_bcl11a/1620_crispritz_spRY_bcl11a_windows.hg38.targets.txt")
