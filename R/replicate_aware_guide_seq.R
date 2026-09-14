@@ -591,7 +591,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   if (any(summary_df$cntrl <= max_false_discs)) {
     selected_params <- summary_df |>
       dplyr::filter(cntrl <= max_false_discs) |>
-      dplyr::arrange(dplyr::desc(trt), dplyr::desc(c), lambda) |>
+      dplyr::arrange(cntrl, dplyr::desc(trt), dplyr::desc(c), lambda) |>
       dplyr::slice(1)
     trt_idx <- sapply(grid_results, FUN = function(curr_res) {
       curr_res$params$c == selected_params$c && curr_res$params$lambda == selected_params$lambda && curr_res$params$condition == "trt"
