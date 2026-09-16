@@ -9,7 +9,7 @@ annotate_clustered_count_df(
   homology_df = NULL,
   n_run_df = NULL,
   encode_blacklist_df = NULL,
-  gamma = log(10)/7
+  gamma = log(20)/7
 )
 }
 \arguments{

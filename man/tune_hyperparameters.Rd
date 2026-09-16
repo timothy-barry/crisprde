@@ -16,8 +16,8 @@ tune_hyperparameters(
   annotated_clustered_count_df_cntrl = NULL,
   weight_p_values = TRUE,
   lambda_default = 20,
-  tau = 0.01,
-  gamma = log(10)/7,
+  tau = 0.1,
+  gamma = log(20)/7,
   verbose = FALSE
 )
 }

@@ -8,7 +8,7 @@ boost_p_values_genovese_cfd(
   augmented_result_df,
   multiplicity_alpha = 0.5,
   tau = 0.1,
-  gamma = log(10)/7
+  gamma = log(20)/7
 )
 }
 \arguments{

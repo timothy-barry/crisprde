@@ -514,7 +514,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                  annotated_clustered_count_df_trt = NULL,
                                  annotated_clustered_count_df_cntrl = NULL,
                                  weight_p_values = TRUE,
-                                 lambda_default = 20, tau = 0.01, gamma = log(10)/7,
+                                 lambda_default = 20, tau = 0.1, gamma = log(20)/7,
                                  verbose = FALSE) {
   if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
       (!is.null(annotated_clustered_count_df_trt) && is.null(annotated_clustered_count_df_cntrl))) {
@@ -711,7 +711,7 @@ load_encode_blacklist_bed <- function(encode_blacklist_file_path) {
 #'   homology_df = homology_df, n_run_df = n_run_df, encode_blacklist_df = encode_blacklist_df)
 #' @export
 annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL,
-                                        encode_blacklist_df = NULL, gamma = log(10)/7) {
+                                        encode_blacklist_df = NULL, gamma = log(20)/7) {
   # compute window df by computing a summary over clustered_count_df
   window_df <- clustered_count_df |>
     dplyr::group_by(window, coord) |>
