@@ -10,7 +10,7 @@
 #'   number of windows. If all scores are zero, weights are one. Missing CFD
 #'   or distance values contribute zero alignment score.
 boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha = 0.5,
-                                       tau = 0.1, gamma = log(10)/7) {
+                                       tau = 0.1, gamma = log(20)/7) {
   w <- compute_alignment_scores(cfds = augmented_result_df$homology_cfd,
                                 distances = augmented_result_df$homology_modal_base_cut_distance,
                                 gamma = gamma)
@@ -36,7 +36,7 @@ boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha 
     dplyr::arrange(p_value)
 }
 
-compute_alignment_scores <- function(cfds, distances, gamma = log(10)/7) {
+compute_alignment_scores <- function(cfds, distances, gamma = log(20)/7) {
   w <- cfds * exp(-gamma * distances)
   w[is.na(w)] <- 0
   return(w)
