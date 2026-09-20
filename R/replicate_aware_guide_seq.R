@@ -473,6 +473,8 @@ construct_replicate_count_table <- function(clustered_count_df, channel_axes = c
 #' @param max_false_discs maximum false discoveries permitted in the control condition
 #' @param annotated_clustered_count_df_trt optional annotated clustered count data frame for the treated condition; if supplied along with `annotated_clustered_count_df_cntrl`, Genovese p-value boosting is used
 #' @param annotated_clustered_count_df_cntrl optional annotated clustered count data frame for the control condition; if supplied along with `annotated_clustered_count_df_trt`, Genovese p-value boosting is used
+#' @param tau baseline normalized weight for zero homology scores
+#' @param gamma exponential distance-decay coefficient; annotations should be generated with the same value
 #'
 #' @returns a list with elements `selected_params`, `selected_trt_run`, `selected_cntrl_run`, `grid_results`
 #' @export
@@ -512,7 +514,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                  annotated_clustered_count_df_trt = NULL,
                                  annotated_clustered_count_df_cntrl = NULL,
                                  weight_p_values = TRUE,
-                                 lambda_default = 20, prior_strength = "aggressive",
+                                 lambda_default = 20, tau = 0.1, gamma = log(20)/7,
                                  verbose = FALSE) {
   if ((is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) ||
       (!is.null(annotated_clustered_count_df_trt) && is.null(annotated_clustered_count_df_cntrl))) {
@@ -577,7 +579,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                            multiplicity_alpha = multiplicity_alpha,
                                            annotated_clustered_count_df = annotated_clustered_count_df)
     if (weight_p_values && !is.null(annotated_clustered_count_df_trt) && !is.null(annotated_clustered_count_df_cntrl)) {
-      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese_cfd(multiplicity_alpha = multiplicity_alpha, prior_strength = prior_strength)
+      fit_res$res_df <- fit_res$res_df |> boost_p_values_genovese_cfd(multiplicity_alpha = multiplicity_alpha, tau = tau, gamma = gamma)
     }
     list(params = curr_row, res = fit_res)
   }
@@ -592,6 +594,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     selected_params <- summary_df |>
       dplyr::filter(cntrl <= max_false_discs) |>
       dplyr::arrange(cntrl, dplyr::desc(trt), dplyr::desc(c), lambda) |>
+      dplyr::arrange(dplyr::desc(trt), cntrl, dplyr::desc(c), lambda) |>
       dplyr::slice(1)
     trt_idx <- sapply(grid_results, FUN = function(curr_res) {
       curr_res$params$c == selected_params$c && curr_res$params$lambda == selected_params$lambda && curr_res$params$condition == "trt"
@@ -688,10 +691,13 @@ load_encode_blacklist_bed <- function(encode_blacklist_file_path) {
 #' - `homology_modal_base_cut_distance` (distance between the modal base and predicted cut site)
 #' - `homology_alignment_score` (combined homology and cut-site-distance score)
 #'
+#' Windows without a CRISPRitz hit have CFD zero, distance Inf, and alignment score zero.
+#'
 #' @param clustered_count_df output of `cluster_loci()`
 #' @param homology_df optional output of `load_crispritz_output()`; if supplied, windows are annotated for overlap with CRISPRitz hits
 #' @param n_run_df optional output of `load_n_run_bed()`; if supplied, windows are annotated for overlap with N-runs
 #' @param encode_blacklist_df optional output of `load_encode_blacklist_bed()`; if supplied, windows are annotated for overlap with ENCODE blacklist regions
+#' @param gamma exponential distance-decay coefficient for ranking candidate alignments
 #'
 #' @examples
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_bcl11a/1620_crispritz_spRY_bcl11a_windows.hg38.targets.txt")
@@ -705,7 +711,8 @@ load_encode_blacklist_bed <- function(encode_blacklist_file_path) {
 #' annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
 #'   homology_df = homology_df, n_run_df = n_run_df, encode_blacklist_df = encode_blacklist_df)
 #' @export
-annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL, encode_blacklist_df = NULL) {
+annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL,
+                                        encode_blacklist_df = NULL, gamma = log(20)/7) {
   # compute window df by computing a summary over clustered_count_df
   window_df <- clustered_count_df |>
     dplyr::group_by(window, coord) |>
@@ -791,7 +798,7 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
         curr_crispritz_candidates <- homology_df_sub[crispritz_query_hits == i,] |>
           dplyr::mutate(homology_modal_base_cut_distance = pmin(abs(curr_window$modal_base - homology_cut_start),
                                                                 abs(curr_window$modal_base - homology_cut_end))) |>
-          dplyr::mutate(homology_alignment_score = compute_alignment_scores(cfds = homology_cfd, distances = homology_modal_base_cut_distance))
+          dplyr::mutate(homology_alignment_score = compute_alignment_scores(cfds = homology_cfd, distances = homology_modal_base_cut_distance, gamma = gamma))
         # find the alignment with the best score, tie-breaking by distance
         best_alignment <- curr_crispritz_candidates |>
           dplyr::arrange(dplyr::desc(homology_alignment_score), homology_modal_base_cut_distance, dplyr::desc(homology_cfd)) |>
@@ -813,7 +820,10 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
   clustered_count_df <- dplyr::left_join(x = clustered_count_df, y = window_df, by = "window")
   if (!is.null(homology_df)) {
     clustered_count_df <- clustered_count_df |>
-      dplyr::mutate(homology_has_hit = ifelse(is.na(homology_bulge_type), FALSE, TRUE))
+      dplyr::mutate(homology_has_hit = ifelse(is.na(homology_bulge_type), FALSE, TRUE),
+                    homology_cfd = ifelse(homology_has_hit, homology_cfd, 0),
+                    homology_modal_base_cut_distance = ifelse(homology_has_hit, homology_modal_base_cut_distance, Inf),
+                    homology_alignment_score = ifelse(homology_has_hit, homology_alignment_score, 0))
   }
 
   return(clustered_count_df)

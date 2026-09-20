@@ -16,7 +16,8 @@ tune_hyperparameters(
   annotated_clustered_count_df_cntrl = NULL,
   weight_p_values = TRUE,
   lambda_default = 20,
-  prior_strength = "aggressive",
+  tau = 0.1,
+  gamma = log(20)/7,
   verbose = FALSE
 )
 }
@@ -38,6 +39,10 @@ tune_hyperparameters(
 \item{annotated_clustered_count_df_trt}{optional annotated clustered count data frame for the treated condition; if supplied along with \code{annotated_clustered_count_df_cntrl}, Genovese p-value boosting is used}
 
 \item{annotated_clustered_count_df_cntrl}{optional annotated clustered count data frame for the control condition; if supplied along with \code{annotated_clustered_count_df_trt}, Genovese p-value boosting is used}
+
+\item{tau}{baseline normalized weight for zero homology scores}
+
+\item{gamma}{exponential distance-decay coefficient; annotations should be generated with the same value}
 }
 \value{
 a list with elements \code{selected_params}, \code{selected_trt_run}, \code{selected_cntrl_run}, \code{grid_results}
