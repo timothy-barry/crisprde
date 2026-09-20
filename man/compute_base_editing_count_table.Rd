@@ -27,12 +27,13 @@ compute_base_editing_count_table(
 \item{to_nuc}{converted nucleotide; default "G"}
 }
 \value{
-a 1-row data frame with columns \code{n_reads}, \code{n_reads_w_intended_substitution}, \code{n_reads_w_bystander_substitution}, \code{n_reads_w_indel}, \code{n_reads_w_modification}
+a 1-row data frame with columns \code{n_reads}, \code{n_reads_in_input}, \code{n_reads_w_intended_substitution}, \code{n_reads_w_bystander_substitution}, \code{n_reads_w_indel}, \code{n_reads_w_modification}
 }
 \description{
 This function takes a CRISPResso directory as input. It outputs a data frame with one row containing the following columns:
 \itemize{
 \item n_reads: total number of (aligned) reads for this sample.
+\item n_reads_in_input: total number of original input reads before preprocessing.
 \item n_reads_w_intended_substitution: number of reads harboring the intended substitution.
 \item n_reads_w_bystander_substitution: number of reads harboring a bystander substitution.
 \item n_reads_w_indel: number of reads harboring an indel.

@@ -32,6 +32,7 @@ reverse_complement <- function(bases) chartr("ACGT", "TGCA", rev(bases))
 #'
 #' This function takes a CRISPResso directory as input. It outputs a data frame with one row containing the following columns:
 #'  - n_reads: total number of (aligned) reads for this sample.
+#'  - n_reads_in_input: total number of original input reads before preprocessing.
 #'  - n_reads_w_intended_substitution: number of reads harboring the intended substitution.
 #'  - n_reads_w_bystander_substitution: number of reads harboring a bystander substitution.
 #'  - n_reads_w_indel: number of reads harboring an indel.
@@ -50,7 +51,7 @@ reverse_complement <- function(bases) chartr("ACGT", "TGCA", rev(bases))
 #' @param from_nuc original nucleotide; default "A"
 #' @param to_nuc converted nucleotide; default "G"
 #'
-#' @returns a 1-row data frame with columns `n_reads`, `n_reads_w_intended_substitution`, `n_reads_w_bystander_substitution`, `n_reads_w_indel`, `n_reads_w_modification`
+#' @returns a 1-row data frame with columns `n_reads`, `n_reads_in_input`, `n_reads_w_intended_substitution`, `n_reads_w_bystander_substitution`, `n_reads_w_indel`, `n_reads_w_modification`
 #' @export
 #'
 #' @examples
@@ -70,6 +71,7 @@ compute_base_editing_count_table <- function(crispresso_dir, indel_positions = c
   protospacer_interval_0based <- unlist(amplicon_metadata$sgRNA_intervals[[1]])
   protospacer_interval_1based <- protospacer_interval_0based + 1L
   n_aligned_reads <- crispresso_metadata$results$alignment_stats$counts_total[[1]]
+  n_reads_in_input <- data.table::fread(file.path(crispresso_dir, "CRISPResso_quantification_of_editing_frequency.txt"))$Reads_in_input[1]
 
   # determine whether protospacer is on plus or minus strand
   protospacer_on_amplicon <- reference_amplicon[protospacer_interval_1based[1]:protospacer_interval_1based[2]]
@@ -124,6 +126,7 @@ compute_base_editing_count_table <- function(crispresso_dir, indel_positions = c
                      n_reads_w_bystander_substitution = sum(n_reads[has_bystander_substitution]),
                      n_reads_w_indel = sum(n_reads[has_indel]),
                      n_reads_w_modification = sum(n_reads[has_modification])) |>
-    dplyr::mutate(n_reads = n_aligned_reads) |> dplyr::relocate(n_reads)
+    dplyr::mutate(n_reads = n_aligned_reads, n_reads_in_input = n_reads_in_input) |>
+    dplyr::relocate(n_reads, n_reads_in_input)
   return(ret)
 }
