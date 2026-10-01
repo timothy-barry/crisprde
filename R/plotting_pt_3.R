@@ -92,6 +92,34 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_tr
 
 
 
+#' Make a simple GUIDE-seq QQ plot
+#'
+#' @param p_values Numeric vector of p-values to compare with a uniform null
+#'   distribution.
+#' @param rev_log_trans Use negative log10 scales if TRUE (the default), or
+#'   reversed linear scales if FALSE.
+#' @param min_p Smallest p-value displayed. Values below this threshold are set
+#'   to it for plotting. Defaults to 1e-16.
+#'
+#' @returns A ggplot QQ plot with a uniform-null confidence band and identity line.
+#' @export
+#'
+#' @examples
+#' make_guideseq_qq_plot_simple(stats::runif(100))
+make_guideseq_qq_plot_simple <- function(p_values, rev_log_trans = TRUE, min_p = 1e-16) {
+  trans <- if (rev_log_trans) revlog_trans(base = 10) else scales::reverse_trans()
+  ggplot2::ggplot(data.frame(p_value = pmax(p_values, min_p)),
+                  ggplot2::aes(y = p_value)) +
+    stat_qq_band() +
+    ggplot2::theme_bw() +
+    ggplot2::labs(x = "Expected null p-value", y = "Observed p-value") +
+    ggplot2::geom_abline(col = "black") +
+    ggplot2::scale_x_continuous(trans = trans) +
+    ggplot2::scale_y_continuous(trans = trans, limits = c(1, min_p)) +
+    stat_qq_points(size = 0.8, ymin = min_p, col = "black")
+}
+
+
 #' Make local scatterplot
 #'
 #' @param annotated_df_sub the annotated data frame for one window. gRNA and DNA sequence information must be present.

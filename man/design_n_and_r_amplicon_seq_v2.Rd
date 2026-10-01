@@ -10,7 +10,8 @@ design_n_and_r_amplicon_seq_v2(
   rho,
   ci_width = 0.01,
   alpha = 0.01,
-  r_grid = seq(1L, 15L)
+  r_grid = seq(1L, 15L),
+  side = c("two_sided", "one_sided")[1]
 )
 }
 \arguments{
@@ -20,11 +21,14 @@ design_n_and_r_amplicon_seq_v2(
 
 \item{rho}{overdispersion parameter}
 
-\item{ci_width}{target width of the confidence interval}
+\item{ci_width}{total interval width for \code{two_sided}, or the margin from
+the estimate to the upper confidence bound for \code{one_sided}}
 
-\item{alpha}{the two-sided confidence interval is level (1-alpha)}
+\item{alpha}{the confidence level is (1-alpha)}
 
 \item{r_grid}{integer vector of replicate counts per condition to evaluate}
+
+\item{side}{\code{two_sided} (default) or \code{one_sided}}
 }
 \value{
 a data frame with one row per value of \code{r_grid}
