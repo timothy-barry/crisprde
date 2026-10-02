@@ -18,4 +18,6 @@ Imports:
   stats,
   MASS,
   GenomeInfoDb,
-  GenomeInfoDbData
+  GenomeInfoDbData,
+  future,
+  future.apply

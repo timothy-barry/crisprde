@@ -226,65 +226,6 @@ get_p_values_given_test_stats_prob_vector <- function(test_stat_v_in, right_tail
 }
 
 
-#' Run multivariate guide-seq method
-#'
-#' Runs the multivariate guide-seq method on a replicate-by-window matrix of counts
-#'
-#' @param Y_mat the r x m integer matrix of UMI counts, where r is the number of replicates and m is the number of windows
-#' @param incorporate_occupancy_info a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation
-#' @param annotated_clustered_count_df optional output of `annotate_clustered_count_df()`; if supplied, homology annotations are joined to the result data frame by window
-#'
-#' @export
-#' @returns a data frame containing a p-value for each window
-#' @examples
-#' set.seed(42)
-#' # NULL DATA
-#' pi <- c(0.05, 0.1, 0.02)
-#' mu_vect <- c(10, 6, 15)
-#' theta_vect <- c(2, 5, 0.3)
-#' m <- 10000
-#' null_dat <- simulate_multirep_guideseq_data(pi, mu_vect, theta_vect, m)
-#'
-#' # ALTERNATIVE DATA
-#' pi <- c(0.5, 0.6, 0.4)
-#' mu_vect <- c(80, 200, 50)
-#' theta_vect <- c(20, 21, 15)
-#' m_alt <- 15
-#' alt_dat <- simulate_multirep_guideseq_data(pi, mu_vect, theta_vect, m_alt)
-#'
-#' # COMBINED DATA
-#' Y_mat <- cbind(alt_dat, null_dat)
-#' colnames(Y_mat) <- paste0("window_", seq_len(ncol(Y_mat)))
-#' incorporate_occupancy_info <- TRUE
-#' multiplicity_alpha <- 0.2
-#'
-#' # RUN METHOD
-#' res_df <- run_multireplicate_guideseq_method(Y_mat, incorporate_occupancy_info = TRUE)
-#'
-#' # EVALUATE RESULT
-#' n_correct_nominations <- sum(res_df$nominated_window[seq(1, m_alt)])
-#' n_total_nominations <- sum(res_df$nominated_window)
-#' fdp <- (n_total_nominations - n_correct_nominations)/n_total_nominations
-run_multireplicate_guideseq_method <- function(Y_mat, incorporate_occupancy_info = TRUE,
-                                               multiplicity_alpha = 0.1, lambda = 20,
-                                               c_tukey_beta = 5, c_tukey_sigma = 5,
-                                               robust_fit = TRUE, annotated_clustered_count_df = NULL) {
-  occupancy_fit <- fit_multirep_guideseq_occupancy(Y_mat = Y_mat,
-                                                   incorporate_occupancy_info = incorporate_occupancy_info)
-  mu_theta_hat_mat <- fit_multirep_guideseq_count_null(Y_mat = Y_mat,
-                                                       c_tukey_beta = c_tukey_beta,
-                                                       c_tukey_sigma = c_tukey_sigma,
-                                                       robust_fit = robust_fit)
-  ret <- score_multirep_guideseq_fit(Y_mat = Y_mat,
-                                     occupancy_fit = occupancy_fit,
-                                     mu_theta_hat_mat = mu_theta_hat_mat,
-                                     lambda = lambda,
-                                     multiplicity_alpha = multiplicity_alpha,
-                                     annotated_clustered_count_df = annotated_clustered_count_df)
-  return(ret)
-}
-
-
 #' Cluster loci
 #'
 #' Clusters loci via single-linkage clustering

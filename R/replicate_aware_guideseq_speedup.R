@@ -252,68 +252,11 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
 }
 
 
-#' Score multirep GUIDE-seq fit
-#'
-#' @param Y_mat Y matrix
-#' @param occupancy_fit fitted occupancy model
-#' @param mu_theta_hat_mat matrix of fitted NB model parameters
-#' @param lambda_grid grid of lambda values over which to compute p-value
-#'
-#' @returns
-#' @export
-#'
-#' @examples
-score_multirep_guideseq_fit <- function(Y_mat, occupancy_fit, mu_theta_hat_mat, lambda_grid) {
-  # unpack items
-  X <- occupancy_fit$X
-  Omega <- occupancy_fit$Omega
-  col_keys <- occupancy_fit$col_keys
-  incorporate_occupancy_info <- occupancy_fit$incorporate_occupancy_info
-  occupancy_pattern_map <- occupancy_fit$occupancy_pattern_map
-
-  # compute total UMI count and initialize p-value vector
-  total_umi_counts <- colSums(Y_mat)
-  occupancy_counts <- colSums(X)
-
-  # iterate over occupancy patterns
-  if (!incorporate_occupancy_info) {
-    # no occupancy info
-    p_vals <- numeric(length = length(total_umi_counts))
-    test_stats <- total_umi_counts - occupancy_counts
-    right_tail_prob_list <- get_right_tail_prob_list(mu_theta_hat_mat = mu_theta_hat_mat,
-                                                     max_needed = max(test_stats), Omega = Omega)
-    for (i in seq_along(right_tail_prob_list)) {
-      idxs <- which(occupancy_pattern_map == i)
-      p_vals[idxs] <- get_p_values_given_test_stats_prob_vector(
-        test_stat_v_in = test_stats[idxs],
-        right_tail_prob_v_in = right_tail_prob_list[[i]]
-      )
-    }
-  } else {
-    # with occupancy info -- mixture over the occupancy patterns
-    log_pi_hat <- log(occupancy_fit$pi_hat)
-    window_log_pi_sum <- as.numeric(crossprod(log_pi_hat, X))
-    pattern_log_pi_sum <- as.numeric(Omega %*% log_pi_hat)
-    test_stats <- (total_umi_counts - occupancy_counts) - lambda * window_log_pi_sum
-    max_needed <- max(0L, ceiling(max(test_stats) + lambda * max(pattern_log_pi_sum)))
-    right_tail_prob_list <- get_right_tail_prob_list(mu_theta_hat_mat = mu_theta_hat_mat,
-                                                     max_needed = max_needed, Omega = Omega)
-    l <- sapply(X = seq_len(nrow(Omega)), FUN = function(i) {
-      sum_start <- ceiling(test_stats + lambda * pattern_log_pi_sum[i])
-      nb_piece <- get_p_values_given_test_stats_prob_vector(
-        test_stat_v_in = sum_start,
-        right_tail_prob_v_in = right_tail_prob_list[[i]]
-      )
-      occupancy_fit$tbp_pattern_df$pmf[i] * nb_piece
-    }, simplify = FALSE)
-    p_vals <- Reduce(f = "+", x = l)
-  }
-}
-
-
 get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega) {
   pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
+    # ensure the tails go out to at least 1e-16 but not farther than 1e-50.
     max_count <- max(max_needed, qnbinom(p = 1e-16, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE))
+    max_count <- min(max_count, qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE))
     dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
   }, simplify = FALSE)
   conv_pmf_list <- apply(X = Omega, MARGIN = 1, FUN = function(curr_row) {
@@ -324,4 +267,3 @@ get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega) {
   })
   return(right_tail_prob_list)
 }
-
