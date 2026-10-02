@@ -36,18 +36,7 @@ convolve_pmfs_v2 <- function(a, b) {
   b <- c(b, numeric(n_fft - length(b)))
 
   out <- stats::fft(stats::fft(a) * stats::fft(b), inverse = TRUE)
-  Re(out[seq_len(n)]) / n_fft
-}
-
-# helper function to convolve a list of pmfs
-convolve_pmf_list <- function(pmf_list) {
-  if (length(pmf_list) == 1L) {
-    out <- pmf_list[[1]]
-  } else {
-    out <- Reduce(convolve_pmfs_v2, pmf_list)
-  }
-  out <- pmax(out, 1e-50)
-  out <- out / sum(out)
+  out <- Re(out[seq_len(n)]) / n_fft
   return(out)
 }
 

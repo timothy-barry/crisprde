@@ -253,15 +253,56 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
 
 
 get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega) {
+  # obtain the pmf list
   pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
     # ensure the tails go out to at least 1e-16 but not farther than 1e-50.
     max_count <- max(max_needed, qnbinom(p = 1e-16, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE))
     max_count <- min(max_count, qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE))
     dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
   }, simplify = FALSE)
-  conv_pmf_list <- apply(X = Omega, MARGIN = 1, FUN = function(curr_row) {
-    convolve_pmf_list(pmf_list[as.logical(curr_row)])
-  }, simplify = FALSE)
+
+  # convert each omega to a binary string; compute its occupancy count; initialize the conv pmf list
+  occupancy_counts <- rowSums(Omega)
+  binary_str_labels <- apply(X = Omega, MARGIN = 1, FUN = function(r) paste0(r, collapse = ""))
+  conv_pmf_list <- vector(mode = "list", length = nrow(Omega))
+  names(conv_pmf_list) <- binary_str_labels
+
+  # iterate over channels of different occupancy counts
+  for (occupancy_count in sort(unique(occupancy_counts))) {
+    omega_idxs <- which(occupancy_counts == occupancy_count)
+    for (omega_idx in omega_idxs) {
+      if (occupancy_count == 1L) {
+        pmf_list_idx <- which(Omega[omega_idx,] == 1L)
+        conv_pmf_list[[omega_idx]] <- pmf_list[[pmf_list_idx]]
+      } else {
+        binary_str_label <- binary_str_labels[omega_idx]
+        binary_str_label_split <- strsplit(binary_str_label, split = "")[[1]]
+        # find rightmost "1"
+        rightmost_1_idx <- max(which(binary_str_label_split == "1"))
+        # construct left and right convolution strings
+        left_conv_string <- binary_str_label_split
+        left_conv_string[rightmost_1_idx] <- "0"
+        right_conv_string <- rep("0", length(left_conv_string))
+        right_conv_string[rightmost_1_idx] <- "1"
+        # index the left and right convolutions
+        left_conv <- conv_pmf_list[[paste0(left_conv_string, collapse = "")]]
+        right_conv <- conv_pmf_list[[paste0(right_conv_string, collapse = "")]]
+        # convolve the left and right convolutions
+        combined_conv <- convolve_pmfs_v2(a = left_conv, b = right_conv)
+        conv_pmf_list[[binary_str_label]] <- combined_conv
+      }
+    }
+  }
+
+  # floor and normalize the convolved pmfs
+  for (i in seq_along(conv_pmf_list)) {
+    curr_pmf <- conv_pmf_list[[i]]
+    curr_pmf <- pmax(curr_pmf, 1e-50)
+    curr_pmf <- curr_pmf / sum(curr_pmf)
+    conv_pmf_list[[i]] <- curr_pmf
+  }
+
+  # compute the right-tail probabilities
   right_tail_prob_list <- lapply(X = conv_pmf_list, FUN = function(curr_pmf) {
     rev(cumsum(rev(curr_pmf)))
   })
