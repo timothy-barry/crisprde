@@ -309,7 +309,6 @@ get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega) {
 }
 
 
-
 #' Run multivariate guide-seq method
 #'
 #' Runs the multivariate guide-seq method on a replicate-by-window matrix of counts

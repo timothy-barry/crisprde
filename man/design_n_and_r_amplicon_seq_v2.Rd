@@ -38,6 +38,9 @@ Given key parameters of an amplicon-seq study, compute the minimum
 per-replicate read depth required to attain a target confidence interval
 width for each candidate replicate count.
 }
+\details{
+When \code{side = two_sided}, \code{ci_width} is the width of the two-sided interval (i.e., upper limit minus lower limit); when \code{side = one_sided}, \code{ci_width} is the upper limit minus the estimate.
+}
 \examples{
 pi_cntrl <- 0.01
 theta <- 0.0
