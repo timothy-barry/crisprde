@@ -3,17 +3,15 @@
 #' @param augmented_result_df result data frame with homology annotations
 #' @param multiplicity_alpha nominal FDR
 #' @param tau baseline normalized weight for zero homology scores, between zero and one
-#' @param gamma exponential distance-decay coefficient; use the same value for annotation
 #'
-#' @details Alignment scores are CFD * exp(-gamma * distance). Normalized weights
+#' @details Uses the stored homology_alignment_score. Normalized weights
 #'   are tau + A * score, where A = n * (1 - tau) / sum(score) and n is the
-#'   number of windows. If all scores are zero, weights are one. Missing CFD
-#'   or distance values contribute zero alignment score.
+#'   number of windows. If all scores are zero, weights are one. Missing scores
+#'   contribute zero alignment score.
 boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha = 0.5,
-                                       tau = 0.1, gamma = log(20)/7) {
-  w <- compute_alignment_scores(cfds = augmented_result_df$homology_cfd,
-                                distances = augmented_result_df$homology_modal_base_cut_distance,
-                                gamma = gamma)
+                                       tau = 0.1) {
+  w <- augmented_result_df$homology_alignment_score
+  w[is.na(w)] <- 0
   n <- length(w)
   if (sum(w) > 0) {
     A <- n * (1 - tau)/sum(w)
@@ -32,8 +30,7 @@ boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha 
                   nominated_window_unweighted = nominated_window,
                   p_value = pmin(1, p_value_weighted),
                   p_value_weight = w_tilde,
-                  nominated_window = nominated_window_weighted) |>
-    dplyr::arrange(p_value)
+                  nominated_window = nominated_window_weighted)
 }
 
 compute_alignment_scores <- function(cfds, distances, gamma = log(20)/7) {

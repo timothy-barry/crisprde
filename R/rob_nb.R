@@ -59,14 +59,13 @@ sig.rob.tukey <- function(sigma,y,mu,c.tukey,weights){
 ############
 # UNIVARIATE
 ############
-fit_rob_nb_univariate <- function(y, weights = rep(1, length(y)), c.tukey.beta=10, c.tukey.sigma=10, minsig=1e-3, maxsig=50, minmu=1e-10, maxmu=1e20, maxit=50, tol=1e-5, maxit.sig=30, tol.sig=1e-6, warn=FALSE) {
+fit_rob_nb_univariate <- function(y, shifted_nb_fit_pilot, weights = rep(1, length(y)), c.tukey.beta=10, c.tukey.sigma=10, minsig=1e-3, maxsig=50, minmu=1e-10, maxmu=1e20, maxit=50, tol=1e-5, maxit.sig=30, tol.sig=1e-6, warn=FALSE) {
   n <- length(y)
   #-------------------------------------------------------------------
   # MLEs of both sigma and beta
   #-------------------------------------------------------------------
-  fit <- MASS::glm.nb(formula = y ~ 1, weights = weights)
-  sigma <- 1/fit$theta
-  mu <- exp(fit$coefficients[[1]])
+  sigma <- 1/shifted_nb_fit_pilot$theta
+  mu <- exp(shifted_nb_fit_pilot$coefficients[[1]])
   eta <- link(mu)
   update.sigma <- T # at least 1 iteration of robust est, worst case = does not move from minsig/maxsig
   #-------------------------------------------------------------------
@@ -112,9 +111,7 @@ fit_rob_nb_univariate <- function(y, weights = rep(1, length(y)), c.tukey.beta=1
   }
   mu <- exp(beta11)
   theta <- 1/sigma
-  l <- sum(y)
-  gamma <- mu/l
-  out <- c(mu = mu, theta = theta, gamma = gamma, l = l)
+  out <- c(mu = mu, theta = theta)
   return(out)
 }
 

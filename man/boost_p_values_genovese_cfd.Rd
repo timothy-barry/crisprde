@@ -7,8 +7,7 @@
 boost_p_values_genovese_cfd(
   augmented_result_df,
   multiplicity_alpha = 0.5,
-  tau = 0.1,
-  gamma = log(20)/7
+  tau = 0.1
 )
 }
 \arguments{
@@ -18,14 +17,13 @@ boost_p_values_genovese_cfd(
 
 \item{tau}{baseline normalized weight for zero homology scores, between zero and one}
 
-\item{gamma}{exponential distance-decay coefficient; use the same value for annotation}
 }
 \description{
 Boost p-values using continuous homology weights
 }
 \details{
-Alignment scores are CFD * exp(-gamma * distance). Normalized weights
+Uses the stored homology_alignment_score. Normalized weights
 are tau + A * score, where A = n * (1 - tau) / sum(score) and n is the
-number of windows. If all scores are zero, weights are one. Missing CFD
-or distance values contribute zero alignment score.
+number of windows. If all scores are zero, weights are one. Missing scores
+contribute zero alignment score.
 }

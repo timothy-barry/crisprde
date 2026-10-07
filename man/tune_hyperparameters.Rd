@@ -7,17 +7,16 @@
 tune_hyperparameters(
   Y_mat_trt,
   Y_mat_cntrl,
+  annotated_clustered_count_df_trt,
+  annotated_clustered_count_df_cntrl,
   c_grid = c(5, 10, 25, 50, 100, 500, 1000),
   lambda_grid = c(0, 10, 25, 50, 100),
   incorporate_occupancy_info = TRUE,
   multiplicity_alpha = 0.5,
   max_false_discs = 5L,
-  annotated_clustered_count_df_trt = NULL,
-  annotated_clustered_count_df_cntrl = NULL,
   weight_p_values = TRUE,
   lambda_default = 20,
   tau = 0.1,
-  gamma = log(20)/7,
   verbose = FALSE
 )
 }
@@ -25,6 +24,10 @@ tune_hyperparameters(
 \item{Y_mat_trt}{treated count matrix}
 
 \item{Y_mat_cntrl}{control count matrix}
+
+\item{annotated_clustered_count_df_trt}{annotated clustered count data frame for the treated condition}
+
+\item{annotated_clustered_count_df_cntrl}{annotated clustered count data frame for the control condition}
 
 \item{c_grid}{robust hyperparm grid}
 
@@ -36,31 +39,19 @@ tune_hyperparameters(
 
 \item{max_false_discs}{maximum false discoveries permitted in the control condition}
 
-\item{annotated_clustered_count_df_trt}{optional annotated clustered count data frame for the treated condition; if supplied along with \code{annotated_clustered_count_df_cntrl}, Genovese p-value boosting is used}
-
-\item{annotated_clustered_count_df_cntrl}{optional annotated clustered count data frame for the control condition; if supplied along with \code{annotated_clustered_count_df_trt}, Genovese p-value boosting is used}
-
 \item{tau}{baseline normalized weight for zero homology scores}
-
-\item{gamma}{exponential distance-decay coefficient; annotations should be generated with the same value}
 }
 \value{
-a list with elements \code{selected_params}, \code{selected_trt_run}, \code{selected_cntrl_run}, \code{grid_results}
+A list with elements \code{selected_params}, \code{selected_trt_run},
+\code{selected_cntrl_run}, \code{grid_results}, and \code{summary_df}. Grid results contain
+skinny window-level tables and fitted parameters. Selected runs additionally
+contain full annotations, sorted by p-value. If no
+combination meets the control-discovery limit, the selected outputs are NA.
 }
 \description{
 Tune hyperparameters
 }
 \examples{
-# basic
-elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
-count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
-dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2, chr != "chrM")
-Y_mat_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |> construct_replicate_count_table()
-Y_mat_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |> construct_replicate_count_table()
-# future::plan(future::multisession, workers = 4)
-future::plan(future::sequential)
-hyperparam_out <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl, c_grid = c(5, 25), lambda_grid = c(5, 50))
-
 # with p-value boosting and filtering on homology
 elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
@@ -68,15 +59,12 @@ dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%i
 homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
-  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df) |>
-  dplyr::filter(homology_has_hit)
+  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df)
 annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
-  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df) |>
-  dplyr::filter(homology_has_hit)
+  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df)
 Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt)
 Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntrl)
 hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
-
 }

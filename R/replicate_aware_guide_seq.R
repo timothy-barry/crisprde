@@ -187,18 +187,29 @@ fit_multirep_guideseq_occupancy <- function(Y_mat, incorporate_occupancy_info = 
 }
 
 
-fit_multirep_guideseq_count_null <- function(Y_mat, c_tukey_beta = 5, c_tukey_sigma = 5, robust_fit = TRUE) {
-  mu_theta_hat_mat <- apply(X = Y_mat, MARGIN = 1, FUN = function(curr_row) {
+fit_multirep_guideseq_count_null <- function(Y_mat, c_grid) {
+  # obtain the pilot fit for each row
+  pilot_fit_list <- apply(X = Y_mat, MARGIN = 1, FUN = function(curr_row) {
     y_plus <- curr_row[curr_row > 0]
-    if (robust_fit) {
-      fit <- fit_rob_nb_univariate(y = y_plus - 1, c.tukey.beta = c_tukey_beta, c.tukey.sigma = c_tukey_sigma)
-    } else {
-      fit <- fit_nb_univariate(y = y_plus - 1)
-    }
-    fit[c("mu", "theta")]
-  }) |> t()
-
-  return(mu_theta_hat_mat)
+    y_plus_tab <- table(y_plus)
+    y_compressed <- as.integer(names(y_plus_tab)) - 1L
+    y_compressed_weights <- as.integer(y_plus_tab)
+    shifted_fit_nb_pilot <- MASS::glm.nb(formula = y_compressed ~ 1, weights = y_compressed_weights)
+    l <- list(y_compressed = y_compressed, y_compressed_weights = y_compressed_weights, shifted_fit_nb_pilot = shifted_fit_nb_pilot)
+  })
+  # next, iterate over c_grid, producing the robust estimate for each c
+  out <- lapply(X = c_grid, FUN = function(curr_c) {
+    estimate_mat <- lapply(X = pilot_fit_list, FUN = function(curr_rep_pilot) {
+      fit_fast <- fit_rob_nb_univariate(y = curr_rep_pilot$y_compressed,
+                                        weights = curr_rep_pilot$y_compressed_weights,
+                                        c.tukey.beta = curr_c,
+                                        c.tukey.sigma = curr_c,
+                                        shifted_nb_fit_pilot = curr_rep_pilot$shifted_fit_nb_pilot)
+    }) |> dplyr::bind_rows() |> as.matrix()
+    rownames(estimate_mat) <- rownames(Y_mat)
+    return(estimate_mat)
+  }) |> setNames(c_grid)
+  return(out)
 }
 
 
