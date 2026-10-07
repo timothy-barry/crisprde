@@ -8,8 +8,7 @@
 #'   are tau + A * score, where A = n * (1 - tau) / sum(score) and n is the
 #'   number of windows. If all scores are zero, weights are one. Missing scores
 #'   contribute zero alignment score.
-boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha = 0.5,
-                                       tau = 0.1) {
+boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha = 0.5, tau = 0.1) {
   w <- augmented_result_df$homology_alignment_score
   w[is.na(w)] <- 0
   n <- length(w)
@@ -27,7 +26,6 @@ boost_p_values_genovese_cfd <- function(augmented_result_df, multiplicity_alpha 
 
   out <- augmented_result_df |>
     dplyr::mutate(p_value_unweighted = p_value,
-                  nominated_window_unweighted = nominated_window,
                   p_value = pmin(1, p_value_weighted),
                   p_value_weight = w_tilde,
                   nominated_window = nominated_window_weighted)

@@ -159,7 +159,8 @@ fit_multirep_guideseq_occupancy <- function(Y_mat, incorporate_occupancy_info = 
   }
 
   Omega <- as.matrix(generate_omega(nrow(Y_mat)))
-  col_keys <- apply(X, 2, paste0, collapse = "")
+  col_keys <- do.call(what = paste0, args = lapply(seq_len(nrow(X)), function(i) X[i, ]))
+  names(col_keys) <- colnames(X)
   pi_hat <- NULL
   tbp_pattern_df <- NULL
   occupancy_pattern_map <- NULL

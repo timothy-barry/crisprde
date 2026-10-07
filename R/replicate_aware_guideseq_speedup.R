@@ -10,12 +10,14 @@
 #' @param annotated_clustered_count_df_trt annotated clustered count data frame for the treated condition
 #' @param annotated_clustered_count_df_cntrl annotated clustered count data frame for the control condition
 #' @param tau baseline normalized weight for zero homology scores
+#' @param verbose whether to print progress messages
 #'
-#' @returns A list with elements `selected_params`, `selected_trt_run`,
-#'   `selected_cntrl_run`, `grid_results`, and `summary_df`. Grid results contain
-#'   skinny window-level tables and fitted parameters. Selected runs additionally
-#'   contain full annotations, sorted by p-value. If no
-#'   combination meets the control-discovery limit, the selected outputs are NA.
+#' @returns A list containing `result_list` (skinny window-level tables indexed by
+#'   condition, c, and lambda), `nb_model_fits` (parameter matrices indexed by
+#'   condition and c), `summary_df`, `selected_params`, `selected_trt_run`, and
+#'   `selected_cntrl_run`. Selected runs contain full annotations sorted by
+#'   p-value and their fitted parameters. If no combination meets the
+#'   control-discovery limit, the selected outputs are NA.
 #' @export
 #'
 #' @examples
@@ -68,12 +70,13 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
 
   # fit the robust NB models, iterating over c_grid
   nb_model_fits <- lapply(X = condition_grid, FUN = function(curr_condition) {
-    mu_theta_hat <- fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]], c_grid = c_grid)
+    if (verbose) message("Fitting NB models for ", curr_condition)
+    fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]], c_grid = c_grid)
   }) |> setNames(condition_grid)
 
-  ###################################
-  # COMPUTE UNIQUE OBSERVATION GROUPS
-  ###################################
+  ##############################################################
+  # PART 2: GROUP OBSERVATIONS AND COMPUTE TEST STATISTICS
+  ##############################################################
   observation_group_list <- lapply(X = condition_grid, FUN = function(condition) {
     umi_counts <- colSums(Y_mat_list[[condition]])
     occupancy_patterns <- occupancy_fit_list[[condition]]$col_keys
@@ -91,9 +94,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     return(out)
   }) |> setNames(condition_grid)
 
-  ################################
-  # COMPUTE UNIQUE TEST STATISTICS
-  ################################
+  # compute test statistics for the unique observations
   test_stat_list <- lapply(X = condition_grid, FUN = function(condition) {
     unique_observation_df <- observation_group_list[[condition]]$unique_observation_df
     occupancy_fit <- occupancy_fit_list[[condition]]
@@ -125,6 +126,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   # PART 3: COMPUTE P-VALUES
   ##########################
   score_model_for_given_c <- function(c) {
+    if (verbose) message("Scoring c = ", c)
     # iterate over conditions
     p_vals_by_condition <- lapply(X = condition_grid, FUN = function(condition) {
       mu_theta_hat_mat <- nb_model_fits[[condition]][[as.character(c)]]
@@ -168,9 +170,10 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   }
   p_vals_by_c <- lapply(X = c_grid, FUN = score_model_for_given_c) |> setNames(c_grid)
 
-  ########################
-  # PART 4: PREPARE OUTPUT
-  ########################
+  ##################################
+  # PART 4: PREPARE WINDOW RESULTS
+  ##################################
+  if (verbose) message("Preparing window results")
   # construct the starting result df
   result_dfs <- lapply(X = condition_grid, FUN = function(condition) {
     # starting point: (window, umi_count, occupancy_pattern) df
@@ -183,24 +186,19 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     result_df <- dplyr::left_join(x = result_df, y = unique_group_df,
                                   by = c("umi_count", "occupancy_pattern"))
     # join with annotated df
-    annotated_clustered_count_df <- if (condition == "trt") {
-      annotated_clustered_count_df_trt
-    } else {
-      annotated_clustered_count_df_cntrl
-    }
+    annotated_clustered_count_df <- annotated_clustered_count_df_list[[condition]]
     annotation_df <- annotated_clustered_count_df |>
       dplyr::select(window, dplyr::starts_with(c("homology", "window", "overlaps"))) |>
       dplyr::distinct()
     result_df <- dplyr::left_join(x = result_df, y = annotation_df, by = "window")
   }) |> setNames(condition_grid)
 
-  # loop over lambda, c, and condition; extract the p-values; and output a data frame containing window, p-value, and homology alignment
+  # expand p-values to windows and apply BH and homology weighting
   result_list <- lapply(X = condition_grid, FUN = function(condition) {
     result_df_skinny <- result_dfs[[condition]] |> dplyr::select(window, group_id, homology_alignment_score)
     incorporate_occupancy_info <- occupancy_fit_list[[condition]]$incorporate_occupancy_info
     results_over_c_lambda <- lapply(X = c_grid, FUN = function(c) {
       lapply(X = lambda_grid, FUN = function(lambda) {
-        print(paste0("c = ", c, ", lamba = ", lambda))
         # extract the relevant p-values for this (c, lambda)
         p_vals_per_lambda <- p_vals_by_c[[as.character(c)]][[condition]]
         if (incorporate_occupancy_info) {
@@ -209,10 +207,11 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
           p_vals <- p_vals_per_lambda$p_vals
         }
         result_df_skinny <- result_df_skinny |> dplyr::mutate(p_value = p_vals[group_id])
-        result_df_skinny$nominated_window <- p.adjust(p = result_df_skinny$p_value, method = "BH") < multiplicity_alpha
         if (weight_p_values) {
           result_df_skinny <- boost_p_values_genovese_cfd(augmented_result_df = result_df_skinny,
                                                           multiplicity_alpha = multiplicity_alpha, tau = tau)
+        } else {
+          result_df_skinny$nominated_window <- p.adjust(p = result_df_skinny$p_value, method = "BH") < multiplicity_alpha
         }
         result_df_skinny
       }) |> setNames(lambda_grid)
@@ -220,26 +219,17 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   }) |> setNames(condition_grid)
 
 
-  # store skinny results for the full grid
-  grid <- expand.grid(c = c_grid, lambda = lambda_grid, condition = condition_grid)
-  grid_results <- lapply(X = seq_len(nrow(grid)), FUN = function(i) {
-    curr_row <- grid[i,,drop = FALSE]
-    curr_condition <- as.character(curr_row$condition)
-    curr_c <- as.character(curr_row$c)
-    curr_lambda <- as.character(curr_row$lambda)
-    res_df <- result_list[[curr_condition]][[curr_c]][[curr_lambda]]
-    ests_list <- list(mu_theta_hat_mat = nb_model_fits[[curr_condition]][[curr_c]])
-    occupancy_fit <- occupancy_fit_list[[curr_condition]]
-    if (occupancy_fit$incorporate_occupancy_info) ests_list$pi_hat <- occupancy_fit$pi_hat
-    list(params = curr_row, res = list(res_df = res_df, ests_list = ests_list))
-  })
-
-  # summarize discoveries and select the best eligible combination
-  summary_df <- lapply(X = grid_results, FUN = function(curr_res) {
-    curr_res$params |>
-      dplyr::mutate(n_discoveries = sum(curr_res$res$res_df$nominated_window))
-  }) |> data.table::rbindlist() |>
-    tidyr::pivot_wider(names_from = "condition", values_from = n_discoveries)
+  #################################
+  # PART 5: SUMMARIZE AND SELECT
+  #################################
+  summary_df <- expand.grid(c = c_grid, lambda = lambda_grid, KEEP.OUT.ATTRS = FALSE) |> dplyr::as_tibble()
+  for (condition in condition_grid) {
+    summary_df[[condition]] <- vapply(seq_len(nrow(summary_df)), function(i) {
+      curr_c <- as.character(summary_df$c[i])
+      curr_lambda <- as.character(summary_df$lambda[i])
+      sum(result_list[[condition]][[curr_c]][[curr_lambda]]$nominated_window)
+    }, integer(1))
+  }
   if (any(summary_df$cntrl <= max_false_discs)) {
     selected_params <- summary_df |>
       dplyr::filter(cntrl <= max_false_discs) |>
@@ -247,20 +237,22 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
       dplyr::slice(1)
 
     # join metadata only for the selected runs
+    selected_c <- as.character(selected_params$c)
+    selected_lambda <- as.character(selected_params$lambda)
     selected_runs <- lapply(X = condition_grid, FUN = function(condition) {
-      idx <- which(grid$c == selected_params$c & grid$lambda == selected_params$lambda &
-                     grid$condition == condition)
-      curr_run <- grid_results[[idx]]$res
+      res_df <- result_list[[condition]][[selected_c]][[selected_lambda]]
       occupancy_fit <- occupancy_fit_list[[condition]]
-      curr_run$res_df$lambda <- if (occupancy_fit$incorporate_occupancy_info) selected_params$lambda else NA
+      ests_list <- list(mu_theta_hat_mat = nb_model_fits[[condition]][[selected_c]])
+      if (occupancy_fit$incorporate_occupancy_info) ests_list$pi_hat <- occupancy_fit$pi_hat
+      res_df$lambda <- if (occupancy_fit$incorporate_occupancy_info) selected_params$lambda else NA
       metadata_df <- result_dfs[[condition]] |>
         dplyr::select(-group_id, -homology_alignment_score)
-      curr_run$res_df <- curr_run$res_df |>
+      res_df <- res_df |>
         dplyr::select(-group_id) |>
         dplyr::left_join(metadata_df, by = "window") |>
         dplyr::relocate(window, p_value, nominated_window, umi_count, lambda, occupancy_pattern) |>
         dplyr::arrange(p_value)
-      return(curr_run)
+      list(res_df = res_df, ests_list = ests_list)
     }) |> setNames(condition_grid)
     selected_trt_run <- selected_runs$trt
     selected_cntrl_run <- selected_runs$cntrl
@@ -272,7 +264,8 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   ret <- list(selected_params = selected_params,
               selected_trt_run = selected_trt_run,
               selected_cntrl_run = selected_cntrl_run,
-              grid_results = grid_results, summary_df = summary_df)
+              result_list = result_list, nb_model_fits = nb_model_fits,
+              summary_df = summary_df)
   return(ret)
 }
 

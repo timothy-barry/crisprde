@@ -40,13 +40,16 @@ tune_hyperparameters(
 \item{max_false_discs}{maximum false discoveries permitted in the control condition}
 
 \item{tau}{baseline normalized weight for zero homology scores}
+
+\item{verbose}{whether to print progress messages}
 }
 \value{
-A list with elements \code{selected_params}, \code{selected_trt_run},
-\code{selected_cntrl_run}, \code{grid_results}, and \code{summary_df}. Grid results contain
-skinny window-level tables and fitted parameters. Selected runs additionally
-contain full annotations, sorted by p-value. If no
-combination meets the control-discovery limit, the selected outputs are NA.
+A list containing \code{result_list} (skinny window-level tables indexed by
+condition, c, and lambda), \code{nb_model_fits} (parameter matrices indexed by
+condition and c), \code{summary_df}, \code{selected_params}, \code{selected_trt_run}, and
+\code{selected_cntrl_run}. Selected runs contain full annotations sorted by
+p-value and their fitted parameters. If no combination meets the
+control-discovery limit, the selected outputs are NA.
 }
 \description{
 Tune hyperparameters
