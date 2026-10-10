@@ -59,13 +59,13 @@ sig.rob.tukey <- function(sigma,y,mu,c.tukey,weights){
 ############
 # UNIVARIATE
 ############
-fit_rob_nb_univariate <- function(y, shifted_nb_fit_pilot, weights = rep(1, length(y)), c.tukey.beta=10, c.tukey.sigma=10, minsig=1e-3, maxsig=50, minmu=1e-10, maxmu=1e20, maxit=50, tol=1e-5, maxit.sig=30, tol.sig=1e-6, warn=TRUE) {
+fit_rob_nb_univariate <- function(y, pilot, weights = rep(1, length(y)), c.tukey.beta=10, c.tukey.sigma=10, minsig=1e-3, maxsig=50, minmu=1e-10, maxmu=1e20, maxit=50, tol=1e-5, maxit.sig=30, tol.sig=1e-6, warn=TRUE) {
   n <- length(y)
   #-------------------------------------------------------------------
-  # MLEs of both sigma and beta
+  # Pilot parameters
   #-------------------------------------------------------------------
-  sigma <- 1/shifted_nb_fit_pilot$theta
-  mu <- exp(shifted_nb_fit_pilot$coefficients[[1]])
+  sigma <- 1/pilot[["theta"]]
+  mu <- pilot[["mu"]]
   eta <- link(mu)
   update.sigma <- T # at least 1 iteration of robust est, worst case = does not move from minsig/maxsig
   #-------------------------------------------------------------------

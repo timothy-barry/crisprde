@@ -16,7 +16,6 @@ boost_p_values_genovese_cfd(
 \item{multiplicity_alpha}{nominal FDR}
 
 \item{tau}{baseline normalized weight for zero homology scores, between zero and one}
-
 }
 \description{
 Boost p-values using continuous homology weights

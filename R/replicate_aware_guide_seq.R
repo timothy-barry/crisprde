@@ -196,7 +196,8 @@ fit_multirep_guideseq_count_null <- function(Y_mat, c_grid) {
     y_compressed <- as.integer(names(y_plus_tab)) - 1L
     y_compressed_weights <- as.integer(y_plus_tab)
     shifted_fit_nb_pilot <- MASS::glm.nb(formula = y_compressed ~ 1, weights = y_compressed_weights)
-    l <- list(y_compressed = y_compressed, y_compressed_weights = y_compressed_weights, shifted_fit_nb_pilot = shifted_fit_nb_pilot)
+    pilot <- c(mu = exp(shifted_fit_nb_pilot$coefficients[[1]]), theta = shifted_fit_nb_pilot$theta)
+    l <- list(y_compressed = y_compressed, y_compressed_weights = y_compressed_weights, pilot = pilot)
   })
   # next, iterate over c_grid, producing the robust estimate for each c
   out <- lapply(X = c_grid, FUN = function(curr_c) {
@@ -205,7 +206,7 @@ fit_multirep_guideseq_count_null <- function(Y_mat, c_grid) {
                                         weights = curr_rep_pilot$y_compressed_weights,
                                         c.tukey.beta = curr_c,
                                         c.tukey.sigma = curr_c,
-                                        shifted_nb_fit_pilot = curr_rep_pilot$shifted_fit_nb_pilot)
+                                        pilot = curr_rep_pilot$pilot)
     }) |> dplyr::bind_rows() |> as.matrix()
     rownames(estimate_mat) <- rownames(Y_mat)
     return(estimate_mat)
