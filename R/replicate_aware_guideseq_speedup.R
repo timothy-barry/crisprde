@@ -10,7 +10,7 @@
 #' @param annotated_clustered_count_df_trt annotated clustered count data frame for the treated condition
 #' @param annotated_clustered_count_df_cntrl annotated clustered count data frame for the control condition
 #' @param tau baseline normalized weight for zero homology scores
-#' @param verbose whether to print progress messages
+#' @param verbose whether to print detailed progress messages within steps
 #'
 #' @returns A list containing `result_list` (skinny window-level tables indexed by
 #'   condition, c, and lambda), `nb_model_fits` (parameter matrices indexed by
@@ -49,6 +49,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   ###########################################################
   # PART 1: FIT OCCUPANCY AND COUNT MODELS TO BOTH CONDITIONS
   ###########################################################
+  message("Step 1/5: Fitting occupancy and count models")
   # fit occupancy models to both conditions
   condition_grid <- c("trt", "cntrl")
   Y_mat_list <- list(trt = Y_mat_trt, cntrl = Y_mat_cntrl)
@@ -77,6 +78,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   ##############################################################
   # PART 2: GROUP OBSERVATIONS AND COMPUTE TEST STATISTICS
   ##############################################################
+  message("Step 2/5: Grouping observations and computing test statistics")
   observation_group_list <- lapply(X = condition_grid, FUN = function(condition) {
     umi_counts <- colSums(Y_mat_list[[condition]])
     occupancy_patterns <- occupancy_fit_list[[condition]]$col_keys
@@ -125,6 +127,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   ##########################
   # PART 3: COMPUTE P-VALUES
   ##########################
+  message("Step 3/5: Computing p-values")
   score_model_for_given_c <- function(c) {
     if (verbose) message("Scoring c = ", c)
     # iterate over conditions
@@ -173,7 +176,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   ##################################
   # PART 4: PREPARE WINDOW RESULTS
   ##################################
-  if (verbose) message("Preparing window results")
+  message("Step 4/5: Preparing window results")
   # construct the starting result df
   result_dfs <- lapply(X = condition_grid, FUN = function(condition) {
     # starting point: (window, umi_count, occupancy_pattern) df
@@ -219,9 +222,10 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   }) |> setNames(condition_grid)
 
 
-  #################################
+  ##############################
   # PART 5: SUMMARIZE AND SELECT
-  #################################
+  ##############################
+  message("Step 5/5: Summarizing results and selecting hyperparameters")
   summary_df <- expand.grid(c = c_grid, lambda = lambda_grid, KEEP.OUT.ATTRS = FALSE) |> dplyr::as_tibble()
   for (condition in condition_grid) {
     summary_df[[condition]] <- vapply(seq_len(nrow(summary_df)), function(i) {

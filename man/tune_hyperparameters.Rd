@@ -41,7 +41,7 @@ tune_hyperparameters(
 
 \item{tau}{baseline normalized weight for zero homology scores}
 
-\item{verbose}{whether to print progress messages}
+\item{verbose}{whether to print detailed progress messages within steps}
 }
 \value{
 A list containing \code{result_list} (skinny window-level tables indexed by

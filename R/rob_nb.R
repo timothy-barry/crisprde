@@ -59,7 +59,7 @@ sig.rob.tukey <- function(sigma,y,mu,c.tukey,weights){
 ############
 # UNIVARIATE
 ############
-fit_rob_nb_univariate <- function(y, shifted_nb_fit_pilot, weights = rep(1, length(y)), c.tukey.beta=10, c.tukey.sigma=10, minsig=1e-3, maxsig=50, minmu=1e-10, maxmu=1e20, maxit=50, tol=1e-5, maxit.sig=30, tol.sig=1e-6, warn=FALSE) {
+fit_rob_nb_univariate <- function(y, shifted_nb_fit_pilot, weights = rep(1, length(y)), c.tukey.beta=10, c.tukey.sigma=10, minsig=1e-3, maxsig=50, minmu=1e-10, maxmu=1e20, maxit=50, tol=1e-5, maxit.sig=30, tol.sig=1e-6, warn=TRUE) {
   n <- length(y)
   #-------------------------------------------------------------------
   # MLEs of both sigma and beta
@@ -82,7 +82,7 @@ fit_rob_nb_univariate <- function(y, shifted_nb_fit_pilot, weights = rep(1, leng
     if (update.sigma) {
       tryit <- try(uniroot(f=sig.rob.tukey,interval=c(minsig,maxsig),tol=tol.sig,maxiter=maxit.sig,mu=mu,y=y,c.tukey=c.tukey.sigma,weights=weights),T)
       if (class(tryit)=='try-error') {
-        if (warn){message(paste('warning: robust update of sigma failed at iteration ',it,', returning last value',sep=''))}
+        if (warn) {message(paste('warning: robust update of sigma failed at iteration ',it,', returning last value',sep=''))}
         update.sigma <- FALSE
       } else {
         sigma <- tryit$root
