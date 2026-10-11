@@ -6,7 +6,7 @@
 \usage{
 fit_nb_mixture_em_low_level(
   y,
-  mu_multipler_start = c(0.5, 2),
+  mu_start,
   theta_start = c(0.5, 0.5),
   pi_start = 1/3,
   maxit = 5000L,
@@ -18,7 +18,7 @@ fit_nb_mixture_em_low_level(
 \arguments{
 \item{y}{Nonnegative integer counts, including zeros.}
 
-\item{mu_multipler_start}{Multipliers of mean(y) for the initial component means.}
+\item{mu_start}{Initial component means.}
 
 \item{theta_start}{Initial component sizes (variance = mu + mu^2 / theta).}
 
@@ -34,9 +34,13 @@ tolerance when \code{robust_estimation = TRUE}.}
 \item{robust_estimation}{Use robust NB fits instead of weighted MLEs in the M step.}
 }
 \value{
-A list containing \code{converged}, \code{parameters}, \code{log_likelihood}, \code{counts}, \code{freq}, and
+A list containing \code{converged}, \code{parameters}, \code{parameter_trace}, \code{log_likelihood}, \code{counts}, \code{freq}, and
 \code{membership_probabilities}. The named parameter vector contains \code{mu_lower},
 \code{mu_upper}, \code{theta_lower}, \code{theta_upper}, and \code{pi}, the higher-mean component's weight.
+\code{parameter_trace} is a data frame with \code{stage}, \code{iteration}, and the five parameter
+columns, including initialization at iteration 0. Components are ordered by mean
+within each row. \code{fit_nb_mixture()} retains the selected standard EM trace and,
+when requested, appends the robust trace with its iteration numbering restarted at 0.
 \code{counts} contains unique input counts, \code{freq} their frequencies, and
 \code{membership_probabilities} their higher-mean component membership probabilities.
 \code{log_likelihood} is the ordinary mixture log likelihood, including for robust fits.
@@ -50,7 +54,7 @@ The components are returned in increasing mean order, i.e., the component with t
 and that with the larger mean is listed second.
 }
 \details{
-Starting means are \code{mu_multipler_start * mean(y)}; \code{theta_start} and \code{pi_start} are used directly. It performs only
+\code{mu_start}, \code{theta_start}, and \code{pi_start} are used directly. It performs only
 one optimization, i.e., starting with these initial guesses, it iterates until convergence.
 
 Standard M steps maximize the weighted NB likelihood, with size constrained to \verb{[0.001, 100]}.
@@ -72,6 +76,6 @@ y_1 <- MASS::rnegbin(n = n, mu = mu_1, theta = theta_1)
 y_2 <- MASS::rnegbin(n = n, mu = mu_2, theta = theta_2)
 z <- rbinom(n = n, prob = pi, size = 1)
 y <- (1 - z) * y_1 + z * y_2
-fit <- fit_nb_mixture_em_low_level(y)
+fit <- fit_nb_mixture_em_low_level(y, mu_start = c(mu_1, mu_2))
 fit <- fit_nb_mixture(y)
 }

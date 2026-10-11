@@ -7,7 +7,7 @@
 #' The components are returned in increasing mean order, i.e., the component with the smaller mean is listed first,
 #' and that with the larger mean is listed second.
 #'
-#' Starting means are `mu_multipler_start * mean(y)`; `theta_start` and `pi_start` are used directly. It performs only
+#' `mu_start`, `theta_start`, and `pi_start` are used directly. It performs only
 #' one optimization, i.e., starting with these initial guesses, it iterates until convergence.
 #'
 #' Standard M steps maximize the weighted NB likelihood, with size constrained to `[0.001, 100]`.
@@ -19,7 +19,7 @@
 #' An internal optimization is that repeated counts are collapsed and weighted by their frequencies.
 #'
 #' @param y Nonnegative integer counts, including zeros.
-#' @param mu_multipler_start Multipliers of mean(y) for the initial component means.
+#' @param mu_start Initial component means.
 #' @param theta_start Initial component sizes (variance = mu + mu^2 / theta).
 #' @param pi_start Initial probability of component 2.
 #' @param maxit Maximum number of EM iterations.
@@ -27,9 +27,13 @@
 #'   tolerance when `robust_estimation = TRUE`.
 #' @param c Tukey tuning constant for both robust mean and dispersion updates.
 #' @param robust_estimation Use robust NB fits instead of weighted MLEs in the M step.
-#' @return A list containing `converged`, `parameters`, `log_likelihood`, `counts`, `freq`, and
+#' @return A list containing `converged`, `parameters`, `parameter_trace`, `log_likelihood`, `counts`, `freq`, and
 #'   `membership_probabilities`. The named parameter vector contains `mu_lower`,
 #'   `mu_upper`, `theta_lower`, `theta_upper`, and `pi`, the higher-mean component's weight.
+#'   `parameter_trace` is a data frame with `stage`, `iteration`, and the five parameter
+#'   columns, including initialization at iteration 0. Components are ordered by mean
+#'   within each row. `fit_nb_mixture()` retains the selected standard EM trace and,
+#'   when requested, appends the robust trace with its iteration numbering restarted at 0.
 #'   `counts` contains unique input counts, `freq` their frequencies, and
 #'   `membership_probabilities` their higher-mean component membership probabilities.
 #'   `log_likelihood` is the ordinary mixture log likelihood, including for robust fits.
@@ -44,9 +48,9 @@
 #' y_2 <- MASS::rnegbin(n = n, mu = mu_2, theta = theta_2)
 #' z <- rbinom(n = n, prob = pi, size = 1)
 #' y <- (1 - z) * y_1 + z * y_2
-#' fit <- fit_nb_mixture_em_low_level(y)
+#' fit <- fit_nb_mixture_em_low_level(y, mu_start = c(mu_1, mu_2))
 #' fit <- fit_nb_mixture(y)
-fit_nb_mixture_em_low_level <- function(y, mu_multipler_start = c(0.5, 2), theta_start = c(0.5, 0.5), pi_start = 1/3, maxit = 5000L, tol = 1e-6, c = 10, robust_estimation = FALSE) {
+fit_nb_mixture_em_low_level <- function(y, mu_start, theta_start, pi_start, maxit = 5000L, tol = 1e-6, c = 10, robust_estimation = FALSE) {
   tab <- table(y)
   counts <- as.numeric(names(tab))
   freq <- as.numeric(tab)
@@ -60,11 +64,21 @@ fit_nb_mixture_em_low_level <- function(y, mu_multipler_start = c(0.5, 2), theta
     list(tau = exp(log_mass - log_mixture), loglik = sum(freq * log_mixture))
   }
 
-  mu <- mu_multipler_start * mean(y)
+  mu <- mu_start
   theta <- theta_start
   pi <- pi_start
+  get_parameters <- function() {
+    component_order <- order(mu)
+    c(mu_lower = mu[[component_order[1]]], mu_upper = mu[[component_order[2]]],
+      theta_lower = theta[[component_order[1]]], theta_upper = theta[[component_order[2]]],
+      pi = c(1 - pi, pi)[[component_order[2]]])
+  }
+  parameter_trace <- matrix(NA_real_, nrow = maxit + 1L, ncol = 5L,
+    dimnames = list(NULL, names(get_parameters())))
+  parameter_trace[1L, ] <- get_parameters()
   current <- e_step(mu, theta, pi)
   converged <- FALSE
+  n_iterations <- 0L
   for (iteration in seq_len(maxit)) {
     previous_loglik <- current$loglik
     previous_parameters <- c(mu, theta, pi)
@@ -89,19 +103,24 @@ fit_nb_mixture_em_low_level <- function(y, mu_multipler_start = c(0.5, 2), theta
       }, numeric(1))
     }
     current <- e_step(mu, theta, pi)
+    parameter_trace[iteration + 1L, ] <- get_parameters()
+    n_iterations <- iteration
     converged <- if (robust_estimation) {
       max(abs(c(mu, theta, pi) - previous_parameters) / (1 + abs(previous_parameters))) <= tol
     } else {
       abs(current$loglik - previous_loglik) <= tol * (1 + abs(previous_loglik))
+    }
+    if (robust_estimation && iteration %% 10L == 0L) {
+      message(iteration, "/", maxit, " iterations complete")
     }
     if (converged) break
   }
 
   component_order <- order(mu)
   l <- list(converged = converged,
-    parameters = c(mu_lower = mu[component_order[1]], mu_upper = mu[component_order[2]],
-      theta_lower = theta[component_order[1]], theta_upper = theta[component_order[2]],
-      pi = c(1 - pi, pi)[component_order[2]]),
+    parameters = get_parameters(),
+    parameter_trace = data.frame(stage = if (robust_estimation) "robust" else "standard",
+      iteration = 0:n_iterations, parameter_trace[seq_len(n_iterations + 1L), , drop = FALSE]),
     log_likelihood = current$loglik,
     membership_probabilities = current$tau[, component_order[2]],
     counts = counts, freq = freq)
@@ -118,11 +137,11 @@ fit_nb_mixture <- function(y, mu_lower_multiplier_range = c(0.1, 1),
     print(paste0("Running EM algorithm on starting parameter ", i, "."))
     mu_lower_multiplier_start <- runif(n = 1, min = mu_lower_multiplier_range[1], max = mu_lower_multiplier_range[2])
     mu_upper_multiplier_start <- runif(n = 1, min = mu_upper_multiplier_range[1], max = mu_upper_multiplier_range[2])
-    mu_multiplier_start <- c(mu_lower_multiplier_start, mu_upper_multiplier_start)
+    mu_start <- c(mu_lower_multiplier_start, mu_upper_multiplier_start) * mean(y)
     theta_start <- exp(runif(n = 2, min = log(theta_range[1]), max = log(theta_range[2])))
     pi_start <- runif(n = 1, min = pi_range[1], max = pi_range[2])
     fit <- fit_nb_mixture_em_low_level(y = y,
-                                       mu_multipler_start = mu_multiplier_start,
+                                       mu_start = mu_start,
                                        theta_start = theta_start, pi_start = pi_start,
                                        maxit = maxit, tol = tol, c = c,
                                        robust_estimation = FALSE)
@@ -141,10 +160,12 @@ fit_nb_mixture <- function(y, mu_lower_multiplier_range = c(0.1, 1),
   if (robust_estimation) {
     print("Running robust EM algorithm.")
     parameters <- fit$parameters
+    mle_trace <- fit$parameter_trace
     fit <- fit_nb_mixture_em_low_level(y = y,
-      mu_multipler_start = unname(parameters[c("mu_lower", "mu_upper")]) / mean(y),
+      mu_start = unname(parameters[c("mu_lower", "mu_upper")]),
       theta_start = unname(parameters[c("theta_lower", "theta_upper")]), pi_start = parameters[["pi"]],
       maxit = maxit, tol = tol, c = c, robust_estimation = TRUE)
+    fit$parameter_trace <- rbind(mle_trace, fit$parameter_trace)
   }
   return(fit)
 }
