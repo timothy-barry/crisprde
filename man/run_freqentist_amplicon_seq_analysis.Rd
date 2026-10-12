@@ -63,8 +63,4 @@ data_list <- generate_synthetic_amplicon_seq_data(p = p, r = 3L, pi_cntrl = 0.05
 # run analysis
 res_freq <- run_freqentist_amplicon_seq_analysis(data_list)
 
-# make plots
-make_pilot_dispersion_plot(res_freq) |> plot()
-make_amplicon_seq_ci_plot(res_freq$result_df) |> plot()
-make_amplicon_seq_p_value_plot(res_freq$result_df) |> plot()
 }

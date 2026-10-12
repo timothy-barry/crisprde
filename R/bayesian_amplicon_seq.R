@@ -29,12 +29,6 @@
 #' res_bayes <- run_bayesian_amplicon_seq_analysis(data_list = data_list, alpha_theta = alpha_theta, beta_theta = beta_theta)
 #' theta_posterior_density_df <- res_bayes$theta_posterior_density_df
 #'
-#' # make plots
-#' make_pilot_dispersion_plot(res_bayes) |> plot()
-#' make_amplicon_seq_ci_plot(res_bayes$result_df) |> plot()
-#' p_theta_prior <- make_prior_density_plot(alpha = alpha_theta, beta = beta_theta, parameter = "theta")
-#' p_theta_posterior_amplicon_1 <- make_posterior_density_plot(posterior_density_df = theta_posterior_density_df, amplicon_id_to_plot = "amplicon_1", parameter = "theta", x_limits = c(0.1, 0.25))
-#' p_theta_posterior_amplicon_amplicon_3 <- make_posterior_density_plot(posterior_density_df = theta_posterior_density_df, amplicon_id_to_plot = "amplicon_3", parameter = "theta", x_limits = c(0, 0.02))
 run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 0.99, rho = NULL,
                                                outlier_mad_thresh = 4, min_mutated_read_count = 50L,
                                                bias_variance_param = 0.5, alpha_pi = 15, beta_pi = 350,
@@ -148,17 +142,9 @@ run_bayesian_amplicon_seq_analysis <- function(data_list, nominal_ci_coverage = 
 #' alpha_theta <- 1
 #' beta_theta <- 1
 #'
-#' # plot the priors
-#' p_prior <- cowplot::plot_grid(make_prior_density_plot(alpha = alpha_theta, beta = beta_theta, parameter = "theta"),
-#'                               make_prior_density_plot(alpha = alpha_pi, beta = beta_pi, parameter = "pi"))
 #' result <- compute_bayesian_estimate_for_amplicon(n_trt, n_cntrl, k_trt, k_cntrl, rho, alpha_pi, beta_pi, alpha_theta, beta_theta)
 #' theta_posterior_density_df <- dplyr::mutate(result$theta_density_df, amplicon_id = "amplicon_1")
 #' pi_posterior_density_df <- dplyr::mutate(result$pi_density_df, amplicon_id = "amplicon_1")
-#' p_posterior <- cowplot::plot_grid(
-#'   make_posterior_density_plot(theta_posterior_density_df, amplicon_id_to_plot = "amplicon_1", parameter = "theta", x_limits = c(0, 0.01)),
-#'   make_posterior_density_plot(pi_posterior_density_df, amplicon_id_to_plot = "amplicon_1", parameter = "pi", x_limits = c(0, 0.01))
-#' )
-#'
 compute_bayesian_estimate_for_amplicon <- function(n_trt, n_cntrl, k_trt, k_cntrl, rho,
                                                    alpha_pi, beta_pi, alpha_theta, beta_theta,
                                                    alpha = 0.01) {

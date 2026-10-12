@@ -10,14 +10,27 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
 Imports:
-  dirmult,
+  BiocGenerics,
+  data.table,
   dplyr,
-  GenomicRanges,
-  S4Vectors,
-  IRanges,
-  stats,
-  MASS,
+  extraDistr,
+  future.apply,
   GenomeInfoDb,
-  GenomeInfoDbData,
-  future,
-  future.apply
+  GenomicRanges,
+  ggplot2,
+  IRanges,
+  jsonlite,
+  MASS,
+  Matrix,
+  methods,
+  patchwork,
+  readr,
+  S4Vectors,
+  scales,
+  stats,
+  tidyr,
+  utils,
+  VGAM
+Suggests:
+  cmdstanr,
+  reticulate

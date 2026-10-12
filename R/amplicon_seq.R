@@ -36,10 +36,6 @@
 #' # run analysis
 #' res_freq <- run_freqentist_amplicon_seq_analysis(data_list)
 #'
-#' # make plots
-#' make_pilot_dispersion_plot(res_freq) |> plot()
-#' make_amplicon_seq_ci_plot(res_freq$result_df) |> plot()
-#' make_amplicon_seq_p_value_plot(res_freq$result_df) |> plot()
 run_freqentist_amplicon_seq_analysis <- function(data_list, editing_threshold = 0, nominal_ci_coverage = 0.99,
                                                  nominal_fdr = 0.1, rho = NULL, tail = "right",
                                                  outlier_mad_thresh = 4, min_mutated_read_count = 50L,
