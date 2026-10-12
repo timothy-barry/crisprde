@@ -11,6 +11,7 @@ tune_hyperparameters(
   annotated_clustered_count_df_cntrl,
   c_grid = c(5, 10, 25, 50, 100, 500, 1000),
   lambda_grid = c(0, 10, 25, 50, 100),
+  count_model = c("nb", "nb_mixture")[1],
   incorporate_occupancy_info = TRUE,
   multiplicity_alpha = 0.5,
   max_false_discs = 5L,
@@ -32,6 +33,8 @@ tune_hyperparameters(
 \item{c_grid}{robust hyperparm grid}
 
 \item{lambda_grid}{lambda grid}
+
+\item{count_model}{the model to use for the count distribution, either a simple negative binomial model ("nb") or a two-component negative binomial mixture model}
 
 \item{incorporate_occupancy_info}{a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation}
 

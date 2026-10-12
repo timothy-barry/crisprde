@@ -5,6 +5,7 @@
 #' @param c_grid robust hyperparm grid
 #' @param lambda_grid lambda grid
 #' @param incorporate_occupancy_info a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation
+#' @param count_model the model to use for the count distribution, either a simple negative binomial model ("nb") or a two-component negative binomial mixture model
 #' @param multiplicity_alpha nominal fdr
 #' @param max_false_discs maximum false discoveries permitted in the control condition
 #' @param annotated_clustered_count_df_trt annotated clustered count data frame for the treated condition
@@ -41,11 +42,19 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                  annotated_clustered_count_df_cntrl,
                                  c_grid = c(5, 10, 25, 50, 100, 500, 1000),
                                  lambda_grid = c(0, 10, 25, 50, 100),
+                                 count_model = c("nb", "nb_mixture")[1],
                                  incorporate_occupancy_info = TRUE,
                                  multiplicity_alpha = 0.5, max_false_discs = 5L,
                                  weight_p_values = TRUE,
                                  lambda_default = 20, tau = 0.1,
                                  verbose = FALSE) {
+  ############
+  # CHECK ARGS
+  ############
+  if (!(count_model %in% c("nb", "nb_mixture"))) {
+    stop("`count_model` must be `nb` or `nb_mixture`.")
+  }
+
   ###########################################################
   # PART 1: FIT OCCUPANCY AND COUNT MODELS TO BOTH CONDITIONS
   ###########################################################
@@ -71,8 +80,12 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
 
   # fit the robust NB models, iterating over c_grid
   nb_model_fits <- lapply(X = condition_grid, FUN = function(curr_condition) {
-    if (verbose) message("Fitting NB models for ", curr_condition)
-    fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]], c_grid = c_grid)
+    if (verbose) message("Fitting count models for ", curr_condition)
+    if (count_model == "nb") {
+      fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]], c_grid = c_grid)
+    } else if (count_model == "nb_mixture") {
+      fit_multirep_guideseq_mixture_count_null(Y_mat = Y_mat_list[[curr_condition]], c_grid = c_grid)
+    }
   }) |> setNames(condition_grid)
 
   ##############################################################
@@ -138,7 +151,8 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
       # get the list of partial convolutions
       right_tail_prob_list <- get_right_tail_prob_list(mu_theta_hat_mat = mu_theta_hat_mat,
                                                        max_needed = max_needed,
-                                                       Omega = occupancy_fit$Omega)
+                                                       Omega = occupancy_fit$Omega,
+                                                       count_model = count_model)
       p_vals <- p_vals_per_lambda <- NULL
       if (!occupancy_fit$incorporate_occupancy_info) { # not incorporating occupancy info
         test_stats <- test_stat_list[[condition]]$test_stats
@@ -274,14 +288,34 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
 }
 
 
-get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega) {
+get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega, count_model) {
   # obtain the pmf list
-  pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
-    # ensure the tails go out to at least 1e-16 but not farther than 1e-50.
-    max_count <- max(max_needed, qnbinom(p = 1e-16, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE))
-    max_count <- min(max_count, qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE))
-    dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
-  }, simplify = FALSE)
+  if (count_model == "nb") {
+    pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
+      # clamp max_needed to fall between the 1e-16 and 1e-50 quantiles
+      quantile_1eminus16 <- qnbinom(p = 1e-16, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
+      quantile_1eminus50 <- qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
+      max_count <- min(max(max_needed, quantile_1eminus16), quantile_1eminus50)
+      dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
+    }, simplify = FALSE)
+  } else {
+    pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
+      quantiles_1eminus16_1eminus50 <- sapply(X = c(1e-16, 1e-50), FUN = function(curr_quantile) {
+        component_quantiles <- qnbinom(p = curr_quantile,
+                                       mu = curr_row[c("mu_lower", "mu_upper")],
+                                       size = curr_row[c("theta_lower", "theta_upper")],
+                                       lower.tail = FALSE) |> max()
+      })
+      max_count <- min(max(max_needed, quantiles_1eminus16_1eminus50[1]), quantiles_1eminus16_1eminus50[2])
+      lower_pmf <- dnbinom(x = seq(0L, max_count),
+                           mu = curr_row[["mu_lower"]], size = curr_row[["theta_lower"]])
+      upper_pmf <- dnbinom(x = seq(0L, max_count),
+                           mu = curr_row[["mu_upper"]], size = curr_row[["theta_upper"]])
+      pi <- curr_row[["pi"]]
+      mixture_pmf <- (1 - pi) * lower_pmf + pi * upper_pmf
+      return(mixture_pmf)
+    }, simplify = FALSE)
+  }
 
   # convert each omega to a binary string; compute its occupancy count; initialize the conv pmf list
   occupancy_counts <- rowSums(Omega)

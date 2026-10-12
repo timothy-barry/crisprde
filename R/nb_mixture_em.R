@@ -27,15 +27,15 @@
 #'   tolerance when `robust_estimation = TRUE`.
 #' @param c Tukey tuning constant for both robust mean and dispersion updates.
 #' @param robust_estimation Use robust NB fits instead of weighted MLEs in the M step.
-#' @return A list containing `converged`, `parameters`, `parameter_trace`, `log_likelihood`, `counts`, `freq`, and
+#' @return A list containing `converged`, `parameters`, `parameter_trace`, `log_likelihood`, and
 #'   `membership_probabilities`. The named parameter vector contains `mu_lower`,
 #'   `mu_upper`, `theta_lower`, `theta_upper`, and `pi`, the higher-mean component's weight.
 #'   `parameter_trace` is a data frame with `stage`, `iteration`, and the five parameter
 #'   columns, including initialization at iteration 0. Components are ordered by mean
 #'   within each row. `fit_nb_mixture()` retains the selected standard EM trace and,
 #'   when requested, appends the robust trace with its iteration numbering restarted at 0.
-#'   `counts` contains unique input counts, `freq` their frequencies, and
-#'   `membership_probabilities` their higher-mean component membership probabilities.
+#'   `membership_probabilities` contains higher-mean component membership probabilities
+#'   in the order of `sort(unique(y))`.
 #'   `log_likelihood` is the ordinary mixture log likelihood, including for robust fits.
 #' @examples
 #' pi <- 0.3
@@ -48,7 +48,8 @@
 #' y_2 <- MASS::rnegbin(n = n, mu = mu_2, theta = theta_2)
 #' z <- rbinom(n = n, prob = pi, size = 1)
 #' y <- (1 - z) * y_1 + z * y_2
-#' fit <- fit_nb_mixture_em_low_level(y, mu_start = c(mu_1, mu_2))
+#' fit <- fit_nb_mixture_em_low_level(y, mu_start = c(mu_1, mu_2),
+#'   theta_start = c(theta_1, theta_2), pi_start = pi)
 #' fit <- fit_nb_mixture(y)
 fit_nb_mixture_em_low_level <- function(y, mu_start, theta_start, pi_start, maxit = 5000L, tol = 1e-6, c = 10, robust_estimation = FALSE) {
   tab <- table(y)
@@ -88,7 +89,7 @@ fit_nb_mixture_em_low_level <- function(y, mu_start, theta_start, pi_start, maxi
     if (robust_estimation) {
       component_fits <- vapply(seq_len(2), function(k) {
         fit_rob_nb_univariate(y = counts, pilot = c(mu = mu[[k]], theta = theta[[k]]),
-          weights = weights[, k], c.tukey.beta = c, c.tukey.sigma = c)
+          weights = weights[, k], c.tukey.beta = c, c.tukey.sigma = c, warn = FALSE)
       }, c(mu = 0, theta = 0))
       mu <- unname(component_fits["mu", ])
       theta <- unname(component_fits["theta", ])
@@ -110,7 +111,7 @@ fit_nb_mixture_em_low_level <- function(y, mu_start, theta_start, pi_start, maxi
     } else {
       abs(current$loglik - previous_loglik) <= tol * (1 + abs(previous_loglik))
     }
-    if (robust_estimation && iteration %% 10L == 0L) {
+    if (robust_estimation && iteration %% 100L == 0L) {
       message(iteration, "/", maxit, " iterations complete")
     }
     if (converged) break
@@ -122,8 +123,7 @@ fit_nb_mixture_em_low_level <- function(y, mu_start, theta_start, pi_start, maxi
     parameter_trace = data.frame(stage = if (robust_estimation) "robust" else "standard",
       iteration = 0:n_iterations, parameter_trace[seq_len(n_iterations + 1L), , drop = FALSE]),
     log_likelihood = current$loglik,
-    membership_probabilities = current$tau[, component_order[2]],
-    counts = counts, freq = freq)
+    membership_probabilities = current$tau[, component_order[2]])
   return(l)
 }
 
@@ -168,4 +168,40 @@ fit_nb_mixture <- function(y, mu_lower_multiplier_range = c(0.1, 1),
     fit$parameter_trace <- rbind(mle_trace, fit$parameter_trace)
   }
   return(fit)
+}
+
+
+fit_multirep_guideseq_mixture_count_null <- function(Y_mat, c_grid) {
+  em_fit_per_row <- future.apply::future_lapply(X = seq_len(nrow(Y_mat)), FUN = function(i) {
+    y <- Y_mat[i,]
+    y_plus <- y[y >= 1]
+    y_shift <- y_plus - 1L
+    fit_em <- fit_nb_mixture(y = y_shift, robust_estimation = FALSE)
+    l <- list(fit = fit_em, y_shift = y_shift)
+  }, future.seed = TRUE, future.scheduling = Inf)
+  jobs <- expand.grid(
+    channel = seq_along(em_fit_per_row),
+    c_index = seq_along(c_grid)
+  )
+  fits <- future.apply::future_lapply(seq_len(nrow(jobs)), function(i) {
+    job <- jobs[i, ]
+    curr_em_fit <- em_fit_per_row[[job$channel]]
+    starting_params <- curr_em_fit$fit$parameters
+    fit_nb_mixture_em_low_level(
+      y = curr_em_fit$y_shift,
+      mu_start = starting_params[c("mu_lower", "mu_upper")],
+      theta_start = starting_params[c("theta_lower", "theta_upper")],
+      pi_start = starting_params[["pi"]],
+      c = c_grid[[job$c_index]],
+      robust_estimation = TRUE,
+      tol = 1e-6
+    )$parameters
+  }, future.scheduling = Inf)
+
+  out <- lapply(seq_along(c_grid), function(i) {
+    estimate_mat <- do.call(rbind, fits[jobs$c_index == i])
+    rownames(estimate_mat) <- rownames(Y_mat)
+    estimate_mat
+  }) |> setNames(c_grid)
+  return(out)
 }
