@@ -15,14 +15,21 @@
 #'
 #' @returns A list containing `result_list` (skinny window-level tables indexed by
 #'   condition, c, and lambda), `nb_model_fits` (parameter matrices indexed by
-#'   condition and c), `summary_df`, `selected_params`, `selected_trt_run`, and
-#'   `selected_cntrl_run`. Selected runs contain full annotations sorted by
-#'   p-value and their fitted parameters. If no combination meets the
-#'   control-discovery limit, the selected outputs are NA.
+#'   condition and c), `occupancy_model_fits` (occupancy fits indexed by `trt`
+#'   and `cntrl`, including `pi_hat` and `tbp_pattern_df`), `summary_df`,
+#'   `selected_params`, `selected_trt_run`, and `selected_cntrl_run`. Selected
+#'   runs contain full annotations sorted by p-value and their fitted count
+#'   parameters. Occupancy fits are returned independently of selection.
+#'   If no combination meets the
+#'   control-discovery limit, the selected outputs are NA. The returned
+#'   `count_model` records whether the fit used `nb` or `nb_mixture`.
 #' @export
 #'
 #' @examples
 #' # with p-value boosting and filtering on homology
+#' #######
+#' # ELANE
+#' #######
 #' elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 #' count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 #' dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2, chr != "chrM")
@@ -37,6 +44,35 @@
 #' hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
 #'   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
 #'   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
+#'
+#' ################
+#' # SBDSP1 DONOR 1
+#' ################
+#' options(parallelly.fork.enable = TRUE)
+#' future::plan(future::multicore, workers = 5)
+#' sbds_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_sbds_ns_15/")
+#' count_df_all <- readRDS(paste0(sbds_dir, "count_tables_without_multimap/combined_count_df.rds")) |>
+#'   dplyr::filter(replicate_id == 1L, chr != "chrM")
+#' homology_df <- load_crispritz_output(paste0(sbds_dir, "crispritz_ACTGAAATCTGTAAGCAGGC_hg38.targets.txt"))
+#' n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
+#' blacklist_df <- load_encode_blacklist_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38-blacklist.v2.bed")
+#' annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
+#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
+#'                              encode_blacklist_df = blacklist_df) |>
+#'   dplyr::filter(!overlaps_n_run, !overlaps_encode_blacklist)
+#' annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
+#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
+#'                              encode_blacklist_df = blacklist_df) |>
+#'   dplyr::filter(!overlaps_n_run, !overlaps_encode_blacklist)
+#' Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt, channel_axes = "primer_type")
+#' Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntrl, channel_axes = "primer_type")
+#' hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
+#'   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
+#'   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl,
+#'   count_model = "nb_mixture")
+#' fitted_count_dist_plot <- make_fitted_count_distribution_plots(
+#'   Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
+#'   hyperparam_res = hyperparam_res, c = 50)
 tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                  annotated_clustered_count_df_trt,
                                  annotated_clustered_count_df_cntrl,
@@ -259,10 +295,8 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     selected_lambda <- as.character(selected_params$lambda)
     selected_runs <- lapply(X = condition_grid, FUN = function(condition) {
       res_df <- result_list[[condition]][[selected_c]][[selected_lambda]]
-      occupancy_fit <- occupancy_fit_list[[condition]]
       ests_list <- list(mu_theta_hat_mat = nb_model_fits[[condition]][[selected_c]])
-      if (occupancy_fit$incorporate_occupancy_info) ests_list$pi_hat <- occupancy_fit$pi_hat
-      res_df$lambda <- if (occupancy_fit$incorporate_occupancy_info) selected_params$lambda else NA
+      res_df$lambda <- if (use_occupancy[[condition]]) selected_params$lambda else NA
       metadata_df <- result_dfs[[condition]] |>
         dplyr::select(-group_id, -homology_alignment_score)
       res_df <- res_df |>
@@ -283,7 +317,9 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
               selected_trt_run = selected_trt_run,
               selected_cntrl_run = selected_cntrl_run,
               result_list = result_list, nb_model_fits = nb_model_fits,
-              summary_df = summary_df)
+              occupancy_model_fits = occupancy_fit_list,
+              summary_df = summary_df,
+              count_model = count_model)
   return(ret)
 }
 

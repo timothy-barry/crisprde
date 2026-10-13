@@ -18,6 +18,7 @@ Imports:
   GenomeInfoDb,
   GenomicRanges,
   ggplot2,
+  graphics,
   IRanges,
   jsonlite,
   MASS,

@@ -49,16 +49,23 @@ tune_hyperparameters(
 \value{
 A list containing \code{result_list} (skinny window-level tables indexed by
 condition, c, and lambda), \code{nb_model_fits} (parameter matrices indexed by
-condition and c), \code{summary_df}, \code{selected_params}, \code{selected_trt_run}, and
-\code{selected_cntrl_run}. Selected runs contain full annotations sorted by
-p-value and their fitted parameters. If no combination meets the
-control-discovery limit, the selected outputs are NA.
+condition and c), \code{occupancy_model_fits} (occupancy fits indexed by \code{trt}
+and \code{cntrl}, including \code{pi_hat} and \code{tbp_pattern_df}), \code{summary_df},
+\code{selected_params}, \code{selected_trt_run}, and \code{selected_cntrl_run}. Selected
+runs contain full annotations sorted by p-value and their fitted count
+parameters. Occupancy fits are returned independently of selection.
+If no combination meets the
+control-discovery limit, the selected outputs are NA. The returned
+\code{count_model} records whether the fit used \code{nb} or \code{nb_mixture}.
 }
 \description{
 Tune hyperparameters
 }
 \examples{
 # with p-value boosting and filtering on homology
+#######
+# ELANE
+#######
 elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elane/")
 count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2, chr != "chrM")
@@ -73,4 +80,33 @@ Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntr
 hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
+
+################
+# SBDSP1 DONOR 1
+################
+options(parallelly.fork.enable = TRUE)
+future::plan(future::multicore, workers = 5)
+sbds_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_sbds_ns_15/")
+count_df_all <- readRDS(paste0(sbds_dir, "count_tables_without_multimap/combined_count_df.rds")) |>
+  dplyr::filter(replicate_id == 1L, chr != "chrM")
+homology_df <- load_crispritz_output(paste0(sbds_dir, "crispritz_ACTGAAATCTGTAAGCAGGC_hg38.targets.txt"))
+n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
+blacklist_df <- load_encode_blacklist_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38-blacklist.v2.bed")
+annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
+  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
+                             encode_blacklist_df = blacklist_df) |>
+  dplyr::filter(!overlaps_n_run, !overlaps_encode_blacklist)
+annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
+  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
+                             encode_blacklist_df = blacklist_df) |>
+  dplyr::filter(!overlaps_n_run, !overlaps_encode_blacklist)
+Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt, channel_axes = "primer_type")
+Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntrl, channel_axes = "primer_type")
+hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
+  annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
+  annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl,
+  count_model = "nb_mixture")
+fitted_count_dist_plot <- make_fitted_count_distribution_plots(
+  Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
+  hyperparam_res = hyperparam_res, c = 50)
 }
