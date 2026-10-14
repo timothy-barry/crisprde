@@ -178,7 +178,7 @@ fit_multirep_guideseq_mixture_count_null <- function(Y_mat, c_grid) {
     y_shift <- y_plus - 1L
     fit_em <- fit_nb_mixture(y = y_shift, robust_estimation = FALSE)
     l <- list(fit = fit_em, y_shift = y_shift)
-  }, future.seed = TRUE, future.scheduling = Inf)
+  }, future.seed = TRUE, future.scheduling = Inf, future.stdout = NA)
   jobs <- expand.grid(
     channel = seq_along(em_fit_per_row),
     c_index = seq_along(c_grid)
@@ -187,7 +187,7 @@ fit_multirep_guideseq_mixture_count_null <- function(Y_mat, c_grid) {
     job <- jobs[i, ]
     curr_em_fit <- em_fit_per_row[[job$channel]]
     starting_params <- curr_em_fit$fit$parameters
-    fit_nb_mixture_em_low_level(
+    fit <- fit_nb_mixture_em_low_level(
       y = curr_em_fit$y_shift,
       mu_start = starting_params[c("mu_lower", "mu_upper")],
       theta_start = starting_params[c("theta_lower", "theta_upper")],
@@ -195,8 +195,12 @@ fit_multirep_guideseq_mixture_count_null <- function(Y_mat, c_grid) {
       c = c_grid[[job$c_index]],
       robust_estimation = TRUE,
       tol = 1e-6
-    )$parameters
-  }, future.scheduling = Inf)
+    )
+    cat("DONE", i, "channel:", rownames(Y_mat)[job$channel],
+        "c:", c_grid[job$c_index], "\n")
+    flush.console()
+    fit$parameters
+  }, future.scheduling = Inf, future.stdout = NA)
 
   out <- lapply(seq_along(c_grid), function(i) {
     estimate_mat <- do.call(rbind, fits[jobs$c_index == i])
