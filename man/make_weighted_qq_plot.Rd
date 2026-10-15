@@ -15,11 +15,12 @@ make_weighted_qq_plot(
 )
 }
 \arguments{
-\item{weighted_p_vals}{Weighted p-values to plot. Values above 1 are clipped
-at 1.}
+\item{weighted_p_vals}{Weighted p-values to plot, supplied from the
+\code{p_value_weighted} column of fitting results. Values above 1 are clipped at 1.}
 
 \item{weights}{Fixed positive weights defining the weighted null
-distribution. These are typically normalized to have mean 1.}
+distribution, supplied from \code{p_value_weight}. These are typically normalized
+to have mean 1.}
 
 \item{point_col}{Point color.}
 
@@ -59,6 +60,7 @@ Uniform(0, 1) input p-values.
 set.seed(4)
 w <- sample(x = c(1, 0.5, 0.1, 0.01), replace = TRUE, size = 5000)
 w_tilde <- w / mean(w)
-weighted_p_vals <- runif(n = 5000, min = 0, max = 1) / w_tilde
-qq_plot <- make_weighted_qq_plot(weighted_p_vals, w_tilde, B = 100L)
+res_df <- data.frame(p_value = runif(5000), p_value_weight = w_tilde)
+res_df$p_value_weighted <- pmin(res_df$p_value / res_df$p_value_weight, 1)
+qq_plot <- make_weighted_qq_plot(res_df$p_value_weighted, res_df$p_value_weight, B = 100L)
 }

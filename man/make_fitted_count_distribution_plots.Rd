@@ -18,7 +18,7 @@ make_fitted_count_distribution_plots(
 \item{Y_mat_cntrl}{Control count matrix with channels in rows and windows in columns.}
 
 \item{hyperparam_res}{Output of \code{\link[=tune_hyperparameters]{tune_hyperparameters()}}, including
-\code{count_model} (\code{nb} or \code{nb_mixture}) and the fitted parameters.}
+\code{count_model} (a model label or named channel-to-model vector) and the fitted parameters.}
 
 \item{c}{Robustness parameter to display. If NULL, use each condition's selected fit.}
 

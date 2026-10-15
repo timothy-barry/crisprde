@@ -17,6 +17,7 @@ Imports:
   future.apply,
   GenomeInfoDb,
   GenomicRanges,
+  GenomicAlignments,
   ggplot2,
   graphics,
   IRanges,

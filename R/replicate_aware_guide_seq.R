@@ -380,6 +380,7 @@ load_encode_blacklist_bed <- function(encode_blacklist_file_path) {
 #' Annotate clustered count df with homology
 #'
 #' Add columns:
+#' - `on_target` (logical; indicates overlap with the supplied on-target interval, ignoring strand; added only when `on_target_posit` is supplied)
 #' - `homology_has_hit` (indicating whether there is a homology hit inside the window)
 #' - `overlaps_n_run` (indicating whether the window overlaps an N-run in the reference genome)
 #' - `overlaps_encode_blacklist` (indicating whether the window overlaps an ENCODE blacklist region)
@@ -401,6 +402,7 @@ load_encode_blacklist_bed <- function(encode_blacklist_file_path) {
 #' @param homology_df optional output of `load_crispritz_output()`; if supplied, windows are annotated for overlap with CRISPRitz hits
 #' @param n_run_df optional output of `load_n_run_bed()`; if supplied, windows are annotated for overlap with N-runs
 #' @param encode_blacklist_df optional output of `load_encode_blacklist_bed()`; if supplied, windows are annotated for overlap with ENCODE blacklist regions
+#' @param on_target_posit optional `GRanges` or `GAlignments` object containing the on-target interval; if supplied, adds the logical `on_target` column using overlaps that ignore strand
 #' @param gamma exponential distance-decay coefficient for ranking candidate alignments
 #'
 #' @examples
@@ -408,15 +410,17 @@ load_encode_blacklist_bed <- function(encode_blacklist_file_path) {
 #' n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 #' encode_blacklist_df <- load_encode_blacklist_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38-blacklist.v2.bed")
 #' bcl11a_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_bcl11a/")
+#' on_target_posit <- readRDS(paste0(bcl11a_dir, "spacer_info.rds"))$guide_info[["1620"]]$grna_alignment
 #' clustered_count_df <- readRDS(paste0(bcl11a_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 #' dplyr::filter(grna == "1620" & treated & chr != "chrM") |>
 #' dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 #' cluster_loci()
 #' annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
-#'   homology_df = homology_df, n_run_df = n_run_df, encode_blacklist_df = encode_blacklist_df)
+#'   homology_df = homology_df, n_run_df = n_run_df, encode_blacklist_df = encode_blacklist_df,
+#'   on_target_posit = on_target_posit)
 #' @export
 annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, n_run_df = NULL,
-                                        encode_blacklist_df = NULL, gamma = log(20)/7) {
+                                        encode_blacklist_df = NULL, on_target_posit = NULL, gamma = log(20)/7) {
   # compute window df by computing a summary over clustered_count_df
   window_df <- clustered_count_df |>
     dplyr::group_by(window, coord) |>
@@ -437,11 +441,15 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
     ranges = IRanges::IRanges(start = window_df$min_cluster_coord, end = window_df$max_cluster_coord)
   )
 
-  append_simple_overlap <- function(window_df, window_gr, df_in, colname) {
+  convert_df_to_gr <- function(df_in) {
     gr_in <- GenomicRanges::GRanges(
       seqnames = df_in$chromosome,
       ranges = IRanges::IRanges(start = df_in$start, end = df_in$end)
     )
+    return(gr_in)
+  }
+
+  append_simple_overlap <- function(window_df, window_gr, gr_in, colname) {
     seqlevels <- union(GenomeInfoDb::seqlevels(window_gr), GenomeInfoDb::seqlevels(gr_in))
     GenomeInfoDb::seqlevels(window_gr) <- seqlevels
     GenomeInfoDb::seqlevels(gr_in) <- seqlevels
@@ -451,16 +459,23 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
     window_df[[colname]][S4Vectors::queryHits(hits)] <- TRUE
     return(window_df)
   }
+
+  if (!is.null(on_target_posit)) {
+    window_df <- append_simple_overlap(window_df = window_df,
+                                       window_gr = window_gr,
+                                       gr_in = on_target_posit,
+                                       colname = "on_target")
+  }
   if (!is.null(n_run_df)) {
     window_df <- append_simple_overlap(window_df = window_df,
                                        window_gr = window_gr,
-                                       df_in = n_run_df,
+                                       gr_in = convert_df_to_gr(n_run_df),
                                        colname = "overlaps_n_run")
   }
   if (!is.null(encode_blacklist_df)) {
     window_df <- append_simple_overlap(window_df = window_df,
                                        window_gr = window_gr,
-                                       df_in = encode_blacklist_df,
+                                       gr_in = convert_df_to_gr(encode_blacklist_df),
                                        colname = "overlaps_encode_blacklist")
   }
 

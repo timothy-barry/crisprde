@@ -13,8 +13,8 @@ tune_hyperparameters(
   lambda_grid = c(0, 10, 25, 50, 100),
   count_model = c("nb", "nb_mixture")[1],
   incorporate_occupancy_info = TRUE,
-  multiplicity_alpha = 0.5,
-  max_false_discs = 5L,
+  tail_start = 0.05,
+  ks_tolerance = 1.5,
   weight_p_values = TRUE,
   lambda_default = 20,
   tau = 0.1,
@@ -34,13 +34,18 @@ tune_hyperparameters(
 
 \item{lambda_grid}{lambda grid}
 
-\item{count_model}{the model to use for the count distribution, either a simple negative binomial model ("nb") or a two-component negative binomial mixture model}
+\item{count_model}{Either "nb" or "nb_mixture" for all channels, or a named
+character vector assigning one of these models to each channel (matrix row name).
+The same mapping applies to both conditions. Both models use robust estimation
+and share the tuning grid for c.}
 
 \item{incorporate_occupancy_info}{a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation}
 
-\item{multiplicity_alpha}{nominal fdr}
+\item{tail_start}{Upper bound on expected null p-values used for the control tail KS statistic.}
 
-\item{max_false_discs}{maximum false discoveries permitted in the control condition}
+\item{ks_tolerance}{Maximum acceptable tail KS as a multiple of the minimum across the grid.}
+
+\item{weight_p_values}{Whether to add \code{p_value_weighted} and \code{p_value_weight} to the results; \code{p_value} always contains raw p-values.}
 
 \item{tau}{baseline normalized weight for zero homology scores}
 
@@ -49,14 +54,16 @@ tune_hyperparameters(
 \value{
 A list containing \code{result_list} (skinny window-level tables indexed by
 condition, c, and lambda), \code{nb_model_fits} (parameter matrices indexed by
-condition and c), \code{occupancy_model_fits} (occupancy fits indexed by \code{trt}
-and \code{cntrl}, including \code{pi_hat} and \code{tbp_pattern_df}), \code{summary_df},
+condition and c, with unused parameter columns set to NA for mixed models),
+\code{occupancy_model_fits} (occupancy fits indexed by \code{trt}
+and \code{cntrl}, including \code{pi_hat} and \code{tbp_pattern_df}),
 \code{selected_params}, \code{selected_trt_run}, and \code{selected_cntrl_run}. Selected
-runs contain full annotations sorted by p-value and their fitted count
-parameters. Occupancy fits are returned independently of selection.
-If no combination meets the
-control-discovery limit, the selected outputs are NA. The returned
-\code{count_model} records whether the fit used \code{nb} or \code{nb_mixture}.
+runs contain full annotations sorted by raw \code{p_value} and their fitted count
+parameters. When weighting is enabled, results also contain \code{p_value_weighted}
+and \code{p_value_weight}. Selection uses raw p-values for control calibration
+and treated on-target sensitivity; no sites are nominated.
+Occupancy fits are returned independently of selection. The returned
+\code{count_model} retains the supplied model label or channel-to-model mapping.
 }
 \description{
 Tune hyperparameters
@@ -70,9 +77,10 @@ elane_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_elan
 count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id \%in\% 1:2, chr != "chrM")
 homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+on_target_posit <- readRDS(paste0(elane_dir, "spacer_info.rds"))$elane_posit
 n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
-  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df)
+  annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df, on_target_posit = on_target_posit)
 annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df)
 Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt)
@@ -90,11 +98,13 @@ sbds_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_sbds_
 count_df_all <- readRDS(paste0(sbds_dir, "count_tables_without_multimap/combined_count_df.rds")) |>
   dplyr::filter(replicate_id == 1L, chr != "chrM")
 homology_df <- load_crispritz_output(paste0(sbds_dir, "crispritz_ACTGAAATCTGTAAGCAGGC_hg38.targets.txt"))
+on_target_posit <- readRDS(paste0(sbds_dir, "spacer_info.rds"))$sbdsp1_posit
 n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 blacklist_df <- load_encode_blacklist_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38-blacklist.v2.bed")
 annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
-                             encode_blacklist_df = blacklist_df) |>
+                             encode_blacklist_df = blacklist_df,
+                             on_target_posit = on_target_posit) |>
   dplyr::filter(!overlaps_n_run, !overlaps_encode_blacklist)
 annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,

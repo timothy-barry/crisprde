@@ -9,6 +9,7 @@ annotate_clustered_count_df(
   homology_df = NULL,
   n_run_df = NULL,
   encode_blacklist_df = NULL,
+  on_target_posit = NULL,
   gamma = log(20)/7
 )
 }
@@ -21,11 +22,14 @@ annotate_clustered_count_df(
 
 \item{encode_blacklist_df}{optional output of \code{load_encode_blacklist_bed()}; if supplied, windows are annotated for overlap with ENCODE blacklist regions}
 
+\item{on_target_posit}{optional \code{GRanges} or \code{GAlignments} object containing the on-target interval; if supplied, adds the logical \code{on_target} column using overlaps that ignore strand}
+
 \item{gamma}{exponential distance-decay coefficient for ranking candidate alignments}
 }
 \description{
 Add columns:
 \itemize{
+\item \code{on_target} (logical; indicates overlap with the supplied on-target interval, ignoring strand; added only when \code{on_target_posit} is supplied)
 \item \code{homology_has_hit} (indicating whether there is a homology hit inside the window)
 \item \code{overlaps_n_run} (indicating whether the window overlaps an N-run in the reference genome)
 \item \code{overlaps_encode_blacklist} (indicating whether the window overlaps an ENCODE blacklist region)
@@ -50,10 +54,12 @@ homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/
 n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 encode_blacklist_df <- load_encode_blacklist_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38-blacklist.v2.bed")
 bcl11a_dir <- paste0(.get_config_path("LOCAL_BAUER_LAB_DATA_DIR"), "guideseq_bcl11a/")
+on_target_posit <- readRDS(paste0(bcl11a_dir, "spacer_info.rds"))$guide_info[["1620"]]$grna_alignment
 clustered_count_df <- readRDS(paste0(bcl11a_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 dplyr::filter(grna == "1620" & treated & chr != "chrM") |>
 dplyr::select(chr, coord, strand, umi_count, primer_type, replicate_id) |>
 cluster_loci()
 annotated_clustered_count_df <- annotate_clustered_count_df(clustered_count_df = clustered_count_df,
-  homology_df = homology_df, n_run_df = n_run_df, encode_blacklist_df = encode_blacklist_df)
+  homology_df = homology_df, n_run_df = n_run_df, encode_blacklist_df = encode_blacklist_df,
+  on_target_posit = on_target_posit)
 }

@@ -17,7 +17,11 @@ make_guideseq_qq_plot(
 )
 }
 \arguments{
-\item{res_df}{a data frame with column \code{p_value} giving the p-value of a given locus}
+\item{res_df}{A data frame with raw p-values in \code{p_value}. Optional logical
+\code{nominated_window} marks sites for the threshold line and discovery labels;
+\code{window_label} supplies labels when \code{annotate_discoveries = TRUE}.
+Weighted p-values in \code{p_value_weighted} are not used; plot those with
+\code{\link[=make_weighted_qq_plot]{make_weighted_qq_plot()}}.}
 }
 \value{
 a qq plot of the results

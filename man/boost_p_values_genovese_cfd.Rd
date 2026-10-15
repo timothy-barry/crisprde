@@ -4,18 +4,17 @@
 \alias{boost_p_values_genovese_cfd}
 \title{Boost p-values using continuous homology weights}
 \usage{
-boost_p_values_genovese_cfd(
-  augmented_result_df,
-  multiplicity_alpha = 0.5,
-  tau = 0.1
-)
+boost_p_values_genovese_cfd(augmented_result_df, tau = 0.1)
 }
 \arguments{
-\item{augmented_result_df}{result data frame with homology annotations}
-
-\item{multiplicity_alpha}{nominal FDR}
+\item{augmented_result_df}{result data frame containing \code{p_value} and \code{homology_alignment_score}}
 
 \item{tau}{baseline normalized weight for zero homology scores, between zero and one}
+}
+\value{
+The input data frame with \code{p_value} unchanged, normalized weights
+in \code{p_value_weight}, and weighted p-values in \code{p_value_weighted}
+(the raw p-value divided by its weight, capped at one).
 }
 \description{
 Boost p-values using continuous homology weights
@@ -24,5 +23,6 @@ Boost p-values using continuous homology weights
 Uses the stored homology_alignment_score. Normalized weights
 are tau + A * score, where A = n * (1 - tau) / sum(score) and n is the
 number of windows. If all scores are zero, weights are one. Missing scores
-contribute zero alignment score.
+contribute zero alignment score. No multiplicity correction or site nomination
+is performed.
 }

@@ -1,6 +1,10 @@
 #' Make GUIDE-seq QQ plot
 #'
-#' @param res_df a data frame with column `p_value` giving the p-value of a given locus
+#' @param res_df A data frame with raw p-values in `p_value`. Optional logical
+#'   `nominated_window` marks sites for the threshold line and discovery labels;
+#'   `window_label` supplies labels when `annotate_discoveries = TRUE`.
+#'   Weighted p-values in `p_value_weighted` are not used; plot those with
+#'   [make_weighted_qq_plot()].
 #'
 #' @returns a qq plot of the results
 #' @export
@@ -11,9 +15,8 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_tr
   if (!is.na(min_p)) {
     res_df <- res_df |> dplyr::mutate(p_value = ifelse(p_value < min_p, min_p, p_value))
   }
-  rejected_p_vals <- res_df |>
-    dplyr::filter(nominated_window) |>
-    dplyr::pull(p_value)
+  nominated_rows <- which(res_df[["nominated_window"]] %in% TRUE)
+  rejected_p_vals <- res_df$p_value[nominated_rows]
   rejection_threshold <- if (length(rejected_p_vals) == 0L) NULL else max(rejected_p_vals)
 
   if (color_ground_truth) {
@@ -46,13 +49,13 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_tr
   p <- p + ggplot2::geom_hline(yintercept = rejection_threshold, col = rej_threshold_col, linetype = "dashed")
 
   # annotate
-  if (annotate_discoveries) {
+  if (annotate_discoveries && length(nominated_rows) > 0L) {
     label_df <- res_df |> dplyr::mutate(
       p_value_plot = pmax(p_value, min_p),
       qq_x = stats::qunif(stats::ppoints(dplyr::n())[rank(p_value_plot, ties.method = "first")]),
       label_y = pmin(1, p_value_plot * 1.5)
     ) |>
-      dplyr::filter(nominated_window)
+      dplyr::slice(nominated_rows)
     p <- p + ggplot2::geom_text(data = label_df,
                                 mapping = ggplot2::aes(x = qq_x, y = label_y, label = window_label),
                                 inherit.aes = FALSE, angle = 90,
@@ -100,7 +103,7 @@ make_guideseq_qq_plot_simple <- function(p_values, rev_log_trans = TRUE, min_p =
 #' @param Y_mat_trt Treated count matrix with channels in rows and windows in columns.
 #' @param Y_mat_cntrl Control count matrix with channels in rows and windows in columns.
 #' @param hyperparam_res Output of [tune_hyperparameters()], including
-#'   `count_model` (`nb` or `nb_mixture`) and the fitted parameters.
+#'   `count_model` (a model label or named channel-to-model vector) and the fitted parameters.
 #' @param c Robustness parameter to display. If NULL, use each condition's selected fit.
 #' @param binwidth Histogram bin width in UMIs; defaults to 10.
 #'
@@ -113,6 +116,7 @@ make_fitted_count_distribution_plots <- function(Y_mat_trt, Y_mat_cntrl, hyperpa
   Y_mats <- list(cntrl = Y_mat_cntrl, trt = Y_mat_trt)
   count_model <- hyperparam_res$count_model
   plot_df <- lapply(names(Y_mats), function(condition) {
+    channel_models <- get_channel_count_models(count_model, rownames(Y_mats[[condition]]))
     parameters <- if (is.null(c)) {
       hyperparam_res[[paste0("selected_", condition, "_run")]]$ests_list$mu_theta_hat_mat
     } else {
@@ -125,12 +129,12 @@ make_fitted_count_distribution_plots <- function(Y_mat_trt, Y_mat_cntrl, hyperpa
       y <- Y_mats[[condition]][channel, ]
       y <- y[y >= 1]
       par <- parameters[channel, ]
-      pmf <- if (count_model == "nb") {
-        stats::dnbinom(count_grid - 1L, mu = par[["mu"]], size = par[["theta"]])
+      pmf <- if (channel_models[[channel]] == "nb") {
+        dnbinom(count_grid - 1L, mu = par[["mu"]], size = par[["theta"]])
       } else {
-        (1 - par[["pi"]]) * stats::dnbinom(count_grid - 1L,
+        (1 - par[["pi"]]) * dnbinom(count_grid - 1L,
           mu = par[["mu_lower"]], size = par[["theta_lower"]]) +
-          par[["pi"]] * stats::dnbinom(count_grid - 1L,
+          par[["pi"]] * dnbinom(count_grid - 1L,
             mu = par[["mu_upper"]], size = par[["theta_upper"]])
       }
       dplyr::bind_rows(

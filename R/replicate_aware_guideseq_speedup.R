@@ -5,9 +5,13 @@
 #' @param c_grid robust hyperparm grid
 #' @param lambda_grid lambda grid
 #' @param incorporate_occupancy_info a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation
-#' @param count_model the model to use for the count distribution, either a simple negative binomial model ("nb") or a two-component negative binomial mixture model
-#' @param multiplicity_alpha nominal fdr
-#' @param max_false_discs maximum false discoveries permitted in the control condition
+#' @param count_model Either "nb" or "nb_mixture" for all channels, or a named
+#'   character vector assigning one of these models to each channel (matrix row name).
+#'   The same mapping applies to both conditions. Both models use robust estimation
+#'   and share the tuning grid for c.
+#' @param tail_start Upper bound on expected null p-values used for the control tail KS statistic.
+#' @param ks_tolerance Maximum acceptable tail KS as a multiple of the minimum across the grid.
+#' @param weight_p_values Whether to add `p_value_weighted` and `p_value_weight` to the results; `p_value` always contains raw p-values.
 #' @param annotated_clustered_count_df_trt annotated clustered count data frame for the treated condition
 #' @param annotated_clustered_count_df_cntrl annotated clustered count data frame for the control condition
 #' @param tau baseline normalized weight for zero homology scores
@@ -15,14 +19,16 @@
 #'
 #' @returns A list containing `result_list` (skinny window-level tables indexed by
 #'   condition, c, and lambda), `nb_model_fits` (parameter matrices indexed by
-#'   condition and c), `occupancy_model_fits` (occupancy fits indexed by `trt`
-#'   and `cntrl`, including `pi_hat` and `tbp_pattern_df`), `summary_df`,
+#'   condition and c, with unused parameter columns set to NA for mixed models),
+#'   `occupancy_model_fits` (occupancy fits indexed by `trt`
+#'   and `cntrl`, including `pi_hat` and `tbp_pattern_df`),
 #'   `selected_params`, `selected_trt_run`, and `selected_cntrl_run`. Selected
-#'   runs contain full annotations sorted by p-value and their fitted count
-#'   parameters. Occupancy fits are returned independently of selection.
-#'   If no combination meets the
-#'   control-discovery limit, the selected outputs are NA. The returned
-#'   `count_model` records whether the fit used `nb` or `nb_mixture`.
+#'   runs contain full annotations sorted by raw `p_value` and their fitted count
+#'   parameters. When weighting is enabled, results also contain `p_value_weighted`
+#'   and `p_value_weight`. Selection uses raw p-values for control calibration
+#'   and treated on-target sensitivity; no sites are nominated.
+#'   Occupancy fits are returned independently of selection. The returned
+#'   `count_model` retains the supplied model label or channel-to-model mapping.
 #' @export
 #'
 #' @examples
@@ -34,9 +40,10 @@
 #' count_df_all <- readRDS(paste0(elane_dir, "count_tables_no_multimap/combined_count_df.rds")) |>
 #' dplyr::filter(cell_type == "CD34" & cas9_variant == "wt_cas9" & replicate_id %in% 1:2, chr != "chrM")
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
+#' on_target_posit <- readRDS(paste0(elane_dir, "spacer_info.rds"))$elane_posit
 #' n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 #' annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
-#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df)
+#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df, on_target_posit = on_target_posit)
 #' annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
 #'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df)
 #' Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt)
@@ -54,11 +61,13 @@
 #' count_df_all <- readRDS(paste0(sbds_dir, "count_tables_without_multimap/combined_count_df.rds")) |>
 #'   dplyr::filter(replicate_id == 1L, chr != "chrM")
 #' homology_df <- load_crispritz_output(paste0(sbds_dir, "crispritz_ACTGAAATCTGTAAGCAGGC_hg38.targets.txt"))
+#' on_target_posit <- readRDS(paste0(sbds_dir, "spacer_info.rds"))$sbdsp1_posit
 #' n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
 #' blacklist_df <- load_encode_blacklist_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38-blacklist.v2.bed")
 #' annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
 #'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
-#'                              encode_blacklist_df = blacklist_df) |>
+#'                              encode_blacklist_df = blacklist_df,
+#'                              on_target_posit = on_target_posit) |>
 #'   dplyr::filter(!overlaps_n_run, !overlaps_encode_blacklist)
 #' annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
 #'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
@@ -80,14 +89,14 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                  lambda_grid = c(0, 10, 25, 50, 100),
                                  count_model = c("nb", "nb_mixture")[1],
                                  incorporate_occupancy_info = TRUE,
-                                 multiplicity_alpha = 0.5, max_false_discs = 5L,
+                                 tail_start = 0.05, ks_tolerance = 1.5,
                                  weight_p_values = TRUE,
                                  lambda_default = 20, tau = 0.1,
                                  verbose = FALSE) {
   ############
   # CHECK ARGS
   ############
-  if (!(count_model %in% c("nb", "nb_mixture"))) {
+  if (!all(count_model %in% c("nb", "nb_mixture"))) {
     stop("`count_model` must be `nb` or `nb_mixture`.")
   }
 
@@ -117,11 +126,20 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   # fit the robust NB models, iterating over c_grid
   nb_model_fits <- lapply(X = condition_grid, FUN = function(curr_condition) {
     if (verbose) message("Fitting count models for ", curr_condition)
-    if (count_model == "nb") {
-      fit_multirep_guideseq_count_null(Y_mat = Y_mat_list[[curr_condition]], c_grid = c_grid)
-    } else if (count_model == "nb_mixture") {
-      fit_multirep_guideseq_mixture_count_null(Y_mat = Y_mat_list[[curr_condition]], c_grid = c_grid)
-    }
+    Y_mat <- Y_mat_list[[curr_condition]]
+    channel_models <- get_channel_count_models(count_model, rownames(Y_mat))
+    fits_by_model <- lapply(unique(channel_models), function(model) {
+      fit_function <- switch(model,
+        nb = fit_multirep_guideseq_count_null,
+        nb_mixture = fit_multirep_guideseq_mixture_count_null)
+      fit_function(Y_mat = Y_mat[channel_models == model, , drop = FALSE], c_grid = c_grid)
+    })
+    lapply(as.character(c_grid), function(c) {
+      parameter_mats <- lapply(fits_by_model, function(fits) fits[[c]])
+      parameters <- dplyr::bind_rows(lapply(parameter_mats, as.data.frame)) |> as.matrix()
+      rownames(parameters) <- unlist(lapply(parameter_mats, rownames), use.names = FALSE)
+      parameters[rownames(Y_mat), , drop = FALSE]
+    }) |> setNames(c_grid)
   }) |> setNames(condition_grid)
 
   ##############################################################
@@ -223,9 +241,9 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   }
   p_vals_by_c <- lapply(X = c_grid, FUN = score_model_for_given_c) |> setNames(c_grid)
 
-  ##################################
+  ################################
   # PART 4: PREPARE WINDOW RESULTS
-  ##################################
+  ################################
   message("Step 4/5: Preparing window results")
   # construct the starting result df
   result_dfs <- lapply(X = condition_grid, FUN = function(condition) {
@@ -241,14 +259,16 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     # join with annotated df
     annotated_clustered_count_df <- annotated_clustered_count_df_list[[condition]]
     annotation_df <- annotated_clustered_count_df |>
-      dplyr::select(window, dplyr::starts_with(c("homology", "window", "overlaps"))) |>
+      dplyr::select(window, dplyr::starts_with(c("homology", "window", "overlaps")),
+                    if (condition == "trt") "on_target" else NULL) |>
       dplyr::distinct()
     result_df <- dplyr::left_join(x = result_df, y = annotation_df, by = "window")
   }) |> setNames(condition_grid)
 
-  # expand p-values to windows and apply BH and homology weighting
+  # expand p-values to windows and apply homology weighting
   result_list <- lapply(X = condition_grid, FUN = function(condition) {
-    result_df_skinny <- result_dfs[[condition]] |> dplyr::select(window, group_id, homology_alignment_score)
+    result_df_skinny <- result_dfs[[condition]] |> dplyr::select(window, group_id, homology_alignment_score,
+                                                                 if (condition == "trt") "on_target" else NULL)
     incorporate_occupancy_info <- occupancy_fit_list[[condition]]$incorporate_occupancy_info
     results_over_c_lambda <- lapply(X = c_grid, FUN = function(c) {
       lapply(X = lambda_grid, FUN = function(lambda) {
@@ -262,80 +282,107 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
         result_df_skinny <- result_df_skinny |> dplyr::mutate(p_value = p_vals[group_id])
         if (weight_p_values) {
           result_df_skinny <- boost_p_values_genovese_cfd(augmented_result_df = result_df_skinny,
-                                                          multiplicity_alpha = multiplicity_alpha, tau = tau)
-        } else {
-          result_df_skinny$nominated_window <- p.adjust(p = result_df_skinny$p_value, method = "BH") < multiplicity_alpha
+                                                          tau = tau)
         }
         result_df_skinny
       }) |> setNames(lambda_grid)
     }) |> setNames(c_grid)
   }) |> setNames(condition_grid)
 
-
   ##############################
   # PART 5: SUMMARIZE AND SELECT
   ##############################
   message("Step 5/5: Summarizing results and selecting hyperparameters")
-  summary_df <- expand.grid(c = c_grid, lambda = lambda_grid, KEEP.OUT.ATTRS = FALSE) |> dplyr::as_tibble()
-  for (condition in condition_grid) {
-    summary_df[[condition]] <- vapply(seq_len(nrow(summary_df)), function(i) {
-      curr_c <- as.character(summary_df$c[i])
-      curr_lambda <- as.character(summary_df$lambda[i])
-      sum(result_list[[condition]][[curr_c]][[curr_lambda]]$nominated_window)
-    }, integer(1))
-  }
-  if (any(summary_df$cntrl <= max_false_discs)) {
-    selected_params <- summary_df |>
-      dplyr::filter(cntrl <= max_false_discs) |>
-      dplyr::arrange(dplyr::desc(trt), cntrl, dplyr::desc(c), lambda) |>
-      dplyr::slice(1)
+  selected_params <- select_c_lambda_combination(result_list = result_list, c_grid = c_grid, lambda_grid = lambda_grid,
+                                                 tail_start = tail_start, ks_tolerance = ks_tolerance)
 
-    # join metadata only for the selected runs
-    selected_c <- as.character(selected_params$c)
-    selected_lambda <- as.character(selected_params$lambda)
-    selected_runs <- lapply(X = condition_grid, FUN = function(condition) {
-      res_df <- result_list[[condition]][[selected_c]][[selected_lambda]]
-      ests_list <- list(mu_theta_hat_mat = nb_model_fits[[condition]][[selected_c]])
-      res_df$lambda <- if (use_occupancy[[condition]]) selected_params$lambda else NA
-      metadata_df <- result_dfs[[condition]] |>
-        dplyr::select(-group_id, -homology_alignment_score)
-      res_df <- res_df |>
-        dplyr::select(-group_id) |>
-        dplyr::left_join(metadata_df, by = "window") |>
-        dplyr::relocate(window, p_value, nominated_window, umi_count, lambda, occupancy_pattern) |>
-        dplyr::arrange(p_value)
-      list(res_df = res_df, ests_list = ests_list)
-    }) |> setNames(condition_grid)
-    selected_trt_run <- selected_runs$trt
-    selected_cntrl_run <- selected_runs$cntrl
-  } else {
-    selected_params <- NA
-    selected_trt_run <- NA
-    selected_cntrl_run <- NA
-  }
+  # join metadata only for the selected runs
+  selected_c <- as.character(selected_params$c)
+  selected_lambda <- as.character(selected_params$lambda)
+  selected_runs <- lapply(X = condition_grid, FUN = function(condition) {
+    res_df <- result_list[[condition]][[selected_c]][[selected_lambda]]
+    ests_list <- list(mu_theta_hat_mat = nb_model_fits[[condition]][[selected_c]])
+    res_df$lambda <- if (use_occupancy[[condition]]) selected_params$lambda else NA
+    metadata_df <- result_dfs[[condition]] |>
+      dplyr::select(-group_id, -homology_alignment_score, -dplyr::any_of("on_target"))
+    res_df <- res_df |>
+      dplyr::select(-group_id) |>
+      dplyr::left_join(metadata_df, by = "window") |>
+      dplyr::relocate(window, p_value, umi_count, lambda, occupancy_pattern) |>
+      dplyr::arrange(p_value)
+    list(res_df = res_df, ests_list = ests_list)
+  }) |> setNames(condition_grid)
   ret <- list(selected_params = selected_params,
-              selected_trt_run = selected_trt_run,
-              selected_cntrl_run = selected_cntrl_run,
+              selected_trt_run = selected_runs$trt,
+              selected_cntrl_run = selected_runs$cntrl,
               result_list = result_list, nb_model_fits = nb_model_fits,
               occupancy_model_fits = occupancy_fit_list,
-              summary_df = summary_df,
               count_model = count_model)
+
   return(ret)
 }
 
 
+select_c_lambda_combination <- function(result_list, c_grid, lambda_grid, tail_start = 0.05, ks_tolerance = 1.5) {
+  # compute ks stat over cntrl dfs and on-target p-value for trt dfs
+  result_list_trt <- result_list$trt
+  result_list_cntrl <- result_list$cntrl
+
+  # set up expected p-values
+  n <- nrow(result_list_cntrl[[1]][[1]])
+  expected_p <- ppoints(n = n)
+  idxs_to_keep <- (expected_p < tail_start)
+  expected_p_tail <- expected_p[idxs_to_keep]
+
+  # compute the control-condition ks stat over the grid
+  cntrl_tail_ks_stat <- lapply(X = c_grid, FUN = function(c) {
+    lapply(X = lambda_grid, FUN = function(lambda) {
+      res_df <- result_list_cntrl[[as.character(c)]][[as.character(lambda)]]
+      observed_p <- sort(res_df$p_value)
+      observed_p_tail <- observed_p[idxs_to_keep]
+      ks_tail <- max(abs(observed_p_tail - expected_p_tail))
+      c(c = c, lambda = lambda, ks_tail = ks_tail)
+    }) |> dplyr::bind_rows()
+  }) |> dplyr::bind_rows()
+
+  # compute the treated-condition on-target p-value over the grid
+  trt_on_target_p_val <- lapply(X = c_grid, FUN = function(c) {
+    lapply(X = lambda_grid, FUN = function(lambda) {
+      res_df <- result_list_trt[[as.character(c)]][[as.character(lambda)]]
+      on_target_p <- res_df |> dplyr::filter(on_target) |> dplyr::pull(p_value)
+      c(c = c, lambda = lambda, on_target_p = on_target_p)
+    }) |> dplyr::bind_rows()
+  }) |> dplyr::bind_rows()
+  metric_df <- dplyr::left_join(cntrl_tail_ks_stat, y = trt_on_target_p_val, by = c("c", "lambda"))
+  min_ks_tail <- min(metric_df$ks_tail)
+  metric_df$acceptable_config <- (metric_df$ks_tail <= ks_tolerance * min_ks_tail)
+  chosen_params <- metric_df |> dplyr::filter(acceptable_config) |> dplyr::arrange(on_target_p) |> dplyr::slice(1)
+  ret <- data.frame(c = chosen_params$c, lambda = chosen_params$lambda)
+  return(ret)
+}
+
+
+get_channel_count_models <- function(count_model, channels) {
+  if (length(count_model) == 1L) {
+    setNames(rep(count_model, length(channels)), channels)
+  } else {
+    count_model[channels]
+  }
+}
+
+
 get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega, count_model) {
-  # obtain the pmf list
-  if (count_model == "nb") {
-    pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
+  # obtain the pmf list in channel order
+  channel_models <- get_channel_count_models(count_model, rownames(mu_theta_hat_mat))
+  pmf_list <- lapply(seq_len(nrow(mu_theta_hat_mat)), function(i) {
+    curr_row <- mu_theta_hat_mat[i, ]
+    if (channel_models[[i]] == "nb") {
       # clamp max_needed to fall between the 1e-16 and 1e-50 quantiles
       quantile_1eminus16 <- qnbinom(p = 1e-16, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
       quantile_1eminus50 <- qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
       max_count <- min(max(max_needed, quantile_1eminus16), quantile_1eminus50)
       dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
-    }, simplify = FALSE)
-  } else {
-    pmf_list <- apply(X = mu_theta_hat_mat, MARGIN = 1, FUN = function(curr_row) {
+    } else {
       quantiles_1eminus16_1eminus50 <- sapply(X = c(1e-16, 1e-50), FUN = function(curr_quantile) {
         component_quantiles <- qnbinom(p = curr_quantile,
                                        mu = curr_row[c("mu_lower", "mu_upper")],
@@ -350,8 +397,8 @@ get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega, count_
       pi <- curr_row[["pi"]]
       mixture_pmf <- (1 - pi) * lower_pmf + pi * upper_pmf
       return(mixture_pmf)
-    }, simplify = FALSE)
-  }
+    }
+  })
 
   # convert each omega to a binary string; compute its occupancy count; initialize the conv pmf list
   occupancy_counts <- rowSums(Omega)
