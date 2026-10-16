@@ -94,6 +94,10 @@ Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntr
 hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl)
+plot_list <- make_guideseq_plot_set(hyperparam_res)
+nomination_res <- get_nominated_sites(hyperparam_res, plot_list, method = "union", fdr_level = 0.5)
+hyperparam_res <- nomination_res$hyperparam_res
+plot_list <- nomination_res$plot_list
 
 ################
 # SBDSP1 DONOR 1
@@ -122,7 +126,8 @@ hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_ma
   annotated_clustered_count_df_trt = annotated_clustered_count_df_trt,
   annotated_clustered_count_df_cntrl = annotated_clustered_count_df_cntrl,
   count_model = "nb_mixture")
-fitted_count_dist_plot <- make_fitted_count_distribution_plots(
-  Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
-  hyperparam_res = hyperparam_res, c = 50)
+plot_list <- make_guideseq_plot_set(hyperparam_res)
+nomination_res <- get_nominated_sites(hyperparam_res, plot_list, method = "union", fdr_level = 0.5)
+hyperparam_res <- nomination_res$hyperparam_res
+plot_list <- nomination_res$plot_list
 }

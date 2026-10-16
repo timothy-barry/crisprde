@@ -4,15 +4,11 @@
 \alias{make_guideseq_plot_set}
 \title{Make the standard GUIDE-seq diagnostic plots}
 \usage{
-make_guideseq_plot_set(hyperparam_res, c = NULL, lambda = NULL)
+make_guideseq_plot_set(hyperparam_res)
 }
 \arguments{
 \item{hyperparam_res}{Output of \code{\link[=tune_hyperparameters]{tune_hyperparameters()}}, including the original
 count matrices in \code{Y_mat_list} and raw and weighted p-values in \code{result_list}.}
-
-\item{c}{Robustness parameter to display; defaults to the selected value.}
-
-\item{lambda}{Occupancy weight to display; defaults to the selected value.}
 }
 \value{
 A named list of individual plots: \code{qq_unweighted_cntrl},
@@ -26,7 +22,7 @@ Make the standard GUIDE-seq diagnostic plots
 }
 \details{
 All QQ plots share a y-axis limit given by the minimum raw or weighted
-p-value across both conditions at the requested configuration. Condition-specific
+p-value across both conditions at the selected configuration. Condition-specific
 QQ plots are computed using \code{future.apply::future_lapply()} and the current
 future plan.
 }

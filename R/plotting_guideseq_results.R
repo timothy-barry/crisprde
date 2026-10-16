@@ -239,8 +239,6 @@ make_fitted_occupancy_distribution_plots <- function(Y_mat_trt, Y_mat_cntrl, hyp
 #'
 #' @param hyperparam_res Output of [tune_hyperparameters()], including the original
 #'   count matrices in `Y_mat_list` and raw and weighted p-values in `result_list`.
-#' @param c Robustness parameter to display; defaults to the selected value.
-#' @param lambda Occupancy weight to display; defaults to the selected value.
 #'
 #' @returns A named list of individual plots: `qq_unweighted_cntrl`,
 #'   `qq_unweighted_trt`, `qq_weighted_cntrl`, `qq_weighted_trt`, `count`, and
@@ -248,13 +246,13 @@ make_fitted_occupancy_distribution_plots <- function(Y_mat_trt, Y_mat_cntrl, hyp
 #'   available. The occupancy plot is included only when both occupancy models
 #'   were fitted. No nomination thresholds are computed.
 #' @details All QQ plots share a y-axis limit given by the minimum raw or weighted
-#'   p-value across both conditions at the requested configuration. Condition-specific
+#'   p-value across both conditions at the selected configuration. Condition-specific
 #'   QQ plots are computed using `future.apply::future_lapply()` and the current
 #'   future plan.
 #' @export
 make_guideseq_plot_set <- function(hyperparam_res) {
-  #if (is.null(c)) c <- hyperparam_res$selected_params$c
-  #if (is.null(lambda)) lambda <- hyperparam_res$selected_params$lambda
+  c <- hyperparam_res$selected_params$c
+  lambda <- hyperparam_res$selected_params$lambda
 
   conditions <- c("cntrl", "trt")
   result_dfs <- lapply(conditions, function(condition) {
