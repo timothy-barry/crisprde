@@ -22,7 +22,8 @@
 #'   condition and c, with unused parameter columns set to NA for mixed models),
 #'   `occupancy_model_fits` (occupancy fits indexed by `trt`
 #'   and `cntrl`, including `pi_hat` and `tbp_pattern_df`),
-#'   `selected_params`, `selected_trt_run`, and `selected_cntrl_run`. Selected
+#'   `selected_params`, `selected_trt_run`, `selected_cntrl_run`, and `Y_mat_list`
+#'   (the original treated and control count matrices). Selected
 #'   runs contain full annotations sorted by raw `p_value` and their fitted count
 #'   parameters. When weighting is enabled, results also contain `p_value_weighted`
 #'   and `p_value_weight`. Selection uses raw p-values for control calibration
@@ -42,10 +43,15 @@
 #' homology_df <- load_crispritz_output("/Users/timbarry/research_offsite/external/bauer-lab/guideseq_elane/crispritz_CCCCGGCAGAAACGTCCGCG.hg38.targets.txt")
 #' on_target_posit <- readRDS(paste0(elane_dir, "spacer_info.rds"))$elane_posit
 #' n_run_df <- load_n_run_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38_N_runs_min10.bed")
+#' blacklist_df <- load_encode_blacklist_bed("/Users/timbarry/research_offsite/ref_genome_dir/hg38-blacklist.v2.bed")
 #' annotated_clustered_count_df_trt <- count_df_all |> dplyr::filter(treated) |> cluster_loci() |>
-#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df, on_target_posit = on_target_posit)
+#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
+#'                              encode_blacklist_df = blacklist_df, on_target_posit = on_target_posit) |>
+#'   dplyr::filter(!overlaps_n_run, !overlaps_encode_blacklist)
 #' annotated_clustered_count_df_cntrl <- count_df_all |> dplyr::filter(!treated) |> cluster_loci() |>
-#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df)
+#'   annotate_clustered_count_df(homology_df = homology_df, n_run_df = n_run_df,
+#'                              encode_blacklist_df = blacklist_df) |>
+#'   dplyr::filter(!overlaps_n_run, !overlaps_encode_blacklist)
 #' Y_mat_trt <- construct_replicate_count_table(annotated_clustered_count_df_trt)
 #' Y_mat_cntrl <- construct_replicate_count_table(annotated_clustered_count_df_cntrl)
 #' hyperparam_res <- tune_hyperparameters(Y_mat_trt = Y_mat_trt, Y_mat_cntrl = Y_mat_cntrl,
@@ -317,7 +323,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
               selected_cntrl_run = selected_runs$cntrl,
               result_list = result_list, nb_model_fits = nb_model_fits,
               occupancy_model_fits = occupancy_fit_list,
-              count_model = count_model)
+              Y_mat_list = Y_mat_list, count_model = count_model)
 
   return(ret)
 }
@@ -446,4 +452,33 @@ get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega, count_
     rev(cumsum(rev(curr_pmf)))
   })
   return(right_tail_prob_list)
+}
+
+
+get_nominated_sites <- function(hyperparam_res, plot_list,
+                                method = c("band_departure", "bh", "union")[1],
+                                fdr_level = 0.5) {
+  res_df_trt <- hyperparam_res$selected_trt_run$res_df |> dplyr::arrange(p_value_weighted)
+  band_thresh <- bh_thresh <- -Inf
+
+  if (method %in% c("band_departure", "union")) {
+    qq_df <- plot_list$qq_weighted_trt@data
+    exceeds_band <- (qq_df$observed_quantile < qq_df$lower_ci) %in% TRUE
+    n_discoveries <- sum(cumprod(exceeds_band))
+    if (n_discoveries >= 1L) band_thresh <- qq_df$lower_ci[n_discoveries]
+  }
+  if (method %in% c("bh", "union")) {
+    bh_discoveries <- p.adjust(res_df_trt$p_value_weighted, method = "BH") <= fdr_level
+    if (any(bh_discoveries)) bh_thresh <- max(res_df_trt$p_value_weighted[bh_discoveries])
+  }
+  decision_thresh <- max(band_thresh, bh_thresh)
+  res_df_trt$nominated_window <- res_df_trt$p_value_weighted <= decision_thresh
+  hyperparam_res$selected_trt_run$res_df <- res_df_trt
+
+  # add line to plot
+  if (is.finite(decision_thresh)) {
+    plot_list$qq_weighted_trt <- plot_list$qq_weighted_trt +
+      ggplot2::geom_hline(yintercept = decision_thresh, col = "blue", linetype = "dashed")
+  }
+  return(list(hyperparam_res = hyperparam_res, plot_list = plot_list))
 }

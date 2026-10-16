@@ -66,35 +66,6 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_tr
 }
 
 
-
-#' Make a simple GUIDE-seq QQ plot
-#'
-#' @param p_values Numeric vector of p-values to compare with a uniform null
-#'   distribution.
-#' @param rev_log_trans Use negative log10 scales if TRUE (the default), or
-#'   reversed linear scales if FALSE.
-#' @param min_p Smallest p-value displayed. Values below this threshold are set
-#'   to it for plotting. Defaults to 1e-16.
-#'
-#' @returns A ggplot QQ plot with a uniform-null confidence band and identity line.
-#' @export
-#'
-#' @examples
-#' make_guideseq_qq_plot_simple(stats::runif(100))
-make_guideseq_qq_plot_simple <- function(p_values, rev_log_trans = TRUE, min_p = 1e-16) {
-  trans <- if (rev_log_trans) revlog_trans(base = 10) else scales::reverse_trans()
-  ggplot2::ggplot(data.frame(p_value = pmax(p_values, min_p)),
-                  ggplot2::aes(y = p_value)) +
-    stat_qq_band() +
-    ggplot2::theme_bw() +
-    ggplot2::labs(x = "Expected null p-value", y = "Observed p-value") +
-    ggplot2::geom_abline(col = "black") +
-    ggplot2::scale_x_continuous(trans = trans) +
-    ggplot2::scale_y_continuous(trans = trans, limits = c(1, min_p)) +
-    stat_qq_points(size = 0.8, ymin = min_p, col = "black")
-}
-
-
 #' Plot fitted GUIDE-seq count distributions
 #'
 #' Plots a histogram of the counts, disaggregated by condition and channel, and
@@ -261,4 +232,60 @@ make_fitted_occupancy_distribution_plots <- function(Y_mat_trt, Y_mat_cntrl, hyp
                             heights = c(4, 0.2875 * n_channels), guides = "collect") &
     ggplot2::theme(legend.position = "bottom")
   return(p)
+}
+
+
+#' Make the standard GUIDE-seq diagnostic plots
+#'
+#' @param hyperparam_res Output of [tune_hyperparameters()], including the original
+#'   count matrices in `Y_mat_list` and raw and weighted p-values in `result_list`.
+#' @param c Robustness parameter to display; defaults to the selected value.
+#' @param lambda Occupancy weight to display; defaults to the selected value.
+#'
+#' @returns A named list of individual plots: `qq_unweighted_cntrl`,
+#'   `qq_unweighted_trt`, `qq_weighted_cntrl`, `qq_weighted_trt`, `count`, and
+#'   `occupancy`. Weighted QQ plots are included only when weighted p-values are
+#'   available. The occupancy plot is included only when both occupancy models
+#'   were fitted. No nomination thresholds are computed.
+#' @details All QQ plots share a y-axis limit given by the minimum raw or weighted
+#'   p-value across both conditions at the requested configuration. Condition-specific
+#'   QQ plots are computed using `future.apply::future_lapply()` and the current
+#'   future plan.
+#' @export
+make_guideseq_plot_set <- function(hyperparam_res) {
+  #if (is.null(c)) c <- hyperparam_res$selected_params$c
+  #if (is.null(lambda)) lambda <- hyperparam_res$selected_params$lambda
+
+  conditions <- c("cntrl", "trt")
+  result_dfs <- lapply(conditions, function(condition) {
+    hyperparam_res$result_list[[condition]][[as.character(c)]][[as.character(lambda)]]
+  }) |> setNames(conditions)
+  min_p <- min(vapply(result_dfs, function(d) min(d$p_value, d[["p_value_weighted"]]), numeric(1)))
+
+  plots <- future.apply::future_lapply(conditions, function(condition) {
+    res_df <- result_dfs[[condition]]
+    plots <- list()
+    title <- if (condition == "cntrl") "Control" else "Treated"
+    plots[[paste0("qq_unweighted_", condition)]] <-
+      make_guideseq_qq_plot(res_df, min_p = min_p) +
+      ggplot2::labs(title = title, subtitle = "Unweighted")
+    if ("p_value_weighted" %in% names(res_df)) {
+      plots[[paste0("qq_weighted_", condition)]] <-
+        make_weighted_qq_plot(res_df$p_value_weighted, res_df$p_value_weight) +
+        ggplot2::scale_y_continuous(trans = revlog_trans(10), limits = c(1, min_p),
+                                    oob = scales::squish) +
+        ggplot2::labs(title = title, subtitle = "Weighted")
+    }
+    plots
+  }, future.seed = TRUE) |> unlist(recursive = FALSE)
+  Y_mat_trt <- hyperparam_res$Y_mat_list$trt
+  Y_mat_cntrl <- hyperparam_res$Y_mat_list$cntrl
+  plots$count <- make_fitted_count_distribution_plots(Y_mat_trt, Y_mat_cntrl,
+                                                       hyperparam_res, c = c)
+  if (all(vapply(hyperparam_res$occupancy_model_fits,
+                 function(fit) fit$incorporate_occupancy_info, logical(1)))) {
+    plots$occupancy <- make_fitted_occupancy_distribution_plots(Y_mat_trt, Y_mat_cntrl,
+                                                               hyperparam_res)
+  }
+  return(plots)
 }
