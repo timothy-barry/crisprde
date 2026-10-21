@@ -209,3 +209,17 @@ fit_multirep_guideseq_mixture_count_null <- function(Y_mat, c_grid) {
   }) |> setNames(c_grid)
   return(out)
 }
+
+
+fit_multirep_guideseq_pln_count_null <- function(Y_mat, c_grid) {
+  pln_fit_per_row <- lapply(X = seq_len(nrow(Y_mat)), FUN = function(i) {
+    y <- Y_mat[i,]
+    y <- y[y >= 1L]
+    fit <- poilog::poilogMLE(n = y, zTrunc = TRUE) # zero-trunc PLN model
+    fit$par
+  }) |> dplyr::bind_rows() |> as.matrix()
+  rownames(pln_fit_per_row) <- rownames(Y_mat)
+  out <- lapply(X = c_grid, FUN = function(c) pln_fit_per_row) |>
+    setNames(c_grid)
+  return(out)
+}

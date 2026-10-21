@@ -26,6 +26,7 @@ Imports:
   Matrix,
   methods,
   patchwork,
+  poilog,
   readr,
   S4Vectors,
   scales,

@@ -79,9 +79,10 @@ make_guideseq_qq_plot <- function(res_df, color_ground_truth = FALSE, rev_log_tr
 #' @param binwidth Histogram bin width in UMIs; defaults to 10.
 #'
 #' @details Only positive counts are plotted. Curves show
-#' expected bin counts under the fitted shifted NB or shifted NB mixture.
+#' expected bin counts under the fitted shifted NB, shifted NB mixture, or
+#' zero-truncated Poisson-lognormal model.
 #' @returns A ggplot with channels in rows, control and treated conditions in
-#'   columns, and a pseudo-log y-axis (`sigma = 1`, `base = 10`).
+#'   columns, independent x-axis ranges, and a pseudo-log y-axis (`sigma = 1`, `base = 10`).
 #' @export
 make_fitted_count_distribution_plots <- function(Y_mat_trt, Y_mat_cntrl, hyperparam_res, c = NULL, binwidth = 10) {
   Y_mats <- list(cntrl = Y_mat_cntrl, trt = Y_mat_trt)
@@ -93,15 +94,17 @@ make_fitted_count_distribution_plots <- function(Y_mat_trt, Y_mat_cntrl, hyperpa
     } else {
       hyperparam_res$nb_model_fits[[condition]][[as.character(c)]]
     }
-    # Cover the last bin in full across the condition's shared x-axis.
-    upper_boundary <- 0.5 + (floor((max(Y_mats[[condition]]) - 0.5) / binwidth) + 1) * binwidth
-    count_grid <- seq_len(ceiling(upper_boundary) - 1L)
     lapply(rownames(Y_mats[[condition]]), function(channel) {
       y <- Y_mats[[condition]][channel, ]
       y <- y[y >= 1]
+      upper_boundary <- 0.5 + (floor((max(y) - 0.5) / binwidth) + 1) * binwidth
+      count_grid <- seq_len(ceiling(upper_boundary) - 1L)
       par <- parameters[channel, ]
       pmf <- if (channel_models[[channel]] == "nb") {
         dnbinom(count_grid - 1L, mu = par[["mu"]], size = par[["theta"]])
+      } else if (channel_models[[channel]] == "zt_poisson_log_normal") {
+        poilog::dpoilog(count_grid, mu = par[["mu"]], sig = par[["sig"]]) /
+          (1 - poilog::dpoilog(0, mu = par[["mu"]], sig = par[["sig"]]))
       } else {
         (1 - par[["pi"]]) * dnbinom(count_grid - 1L,
           mu = par[["mu_lower"]], size = par[["theta_lower"]]) +
@@ -126,7 +129,8 @@ make_fitted_count_distribution_plots <- function(Y_mat_trt, Y_mat_cntrl, hyperpa
     ggplot2::stat_bin(data = dplyr::filter(plot_df, distribution == "fitted"),
       geom = "line", position = "identity", binwidth = binwidth, boundary = 0.5, closed = "left",
       colour = "#0072B2", linewidth = 0.8) +
-    ggplot2::facet_grid(channel ~ condition, scales = "free") +
+    ggplot2::facet_wrap(ggplot2::vars(channel, condition), ncol = 2, scales = "free",
+      labeller = function(labels) list(paste(labels$channel, tolower(labels$condition), sep = " - "))) +
     ggplot2::scale_y_continuous(trans = scales::pseudo_log_trans(sigma = 1, base = 10),
       breaks = 10^(0:5), labels = scales::label_comma()) +
     ggplot2::labs(x = "Window-wise UMI count", y = "Number of windows (pseudo-log scale)") +

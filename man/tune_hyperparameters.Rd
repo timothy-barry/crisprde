@@ -11,7 +11,7 @@ tune_hyperparameters(
   annotated_clustered_count_df_cntrl,
   c_grid = c(5, 10, 25, 50, 100, 500, 1000),
   lambda_grid = c(0, 10, 25, 50, 100),
-  count_model = c("nb", "nb_mixture")[1],
+  count_model = c("nb", "nb_mixture", "zt_poisson_log_normal")[1],
   incorporate_occupancy_info = TRUE,
   tail_start = 0.05,
   ks_tolerance = 1.5,
@@ -34,10 +34,12 @@ tune_hyperparameters(
 
 \item{lambda_grid}{lambda grid}
 
-\item{count_model}{Either "nb" or "nb_mixture" for all channels, or a named
-character vector assigning one of these models to each channel (matrix row name).
-The same mapping applies to both conditions. Both models use robust estimation
-and share the tuning grid for c.}
+\item{count_model}{One of "nb", "nb_mixture", or "zt_poisson_log_normal"
+for all channels, or a named character vector assigning a model to each
+channel (matrix row name). The same mapping applies to both conditions.
+NB models fit shifted positive counts using robust estimation over c_grid.
+Zero-truncated PLN fits positive counts by maximum likelihood and reuses
+the same fit across c_grid.}
 
 \item{incorporate_occupancy_info}{a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation}
 

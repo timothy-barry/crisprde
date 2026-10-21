@@ -26,7 +26,7 @@ make_fitted_count_distribution_plots(
 }
 \value{
 A ggplot with channels in rows, control and treated conditions in
-columns, and a pseudo-log y-axis (\code{sigma = 1}, \code{base = 10}).
+columns, independent x-axis ranges, and a pseudo-log y-axis (\code{sigma = 1}, \code{base = 10}).
 }
 \description{
 Plots a histogram of the counts, disaggregated by condition and channel, and
@@ -34,5 +34,6 @@ superimposes the fitted count curve.
 }
 \details{
 Only positive counts are plotted. Curves show
-expected bin counts under the fitted shifted NB or shifted NB mixture.
+expected bin counts under the fitted shifted NB, shifted NB mixture, or
+zero-truncated Poisson-lognormal model.
 }

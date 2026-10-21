@@ -5,10 +5,12 @@
 #' @param c_grid robust hyperparm grid
 #' @param lambda_grid lambda grid
 #' @param incorporate_occupancy_info a boolean (T/F) indicating whether to incorporate occupancy information into the p-value calculation
-#' @param count_model Either "nb" or "nb_mixture" for all channels, or a named
-#'   character vector assigning one of these models to each channel (matrix row name).
-#'   The same mapping applies to both conditions. Both models use robust estimation
-#'   and share the tuning grid for c.
+#' @param count_model One of "nb", "nb_mixture", or "zt_poisson_log_normal"
+#'   for all channels, or a named character vector assigning a model to each
+#'   channel (matrix row name). The same mapping applies to both conditions.
+#'   NB models fit shifted positive counts using robust estimation over c_grid.
+#'   Zero-truncated PLN fits positive counts by maximum likelihood and reuses
+#'   the same fit across c_grid.
 #' @param tail_start Upper bound on expected null p-values used for the control tail KS statistic.
 #' @param ks_tolerance Maximum acceptable tail KS as a multiple of the minimum across the grid.
 #' @param weight_p_values Whether to add `p_value_weighted` and `p_value_weight` to the results; `p_value` always contains raw p-values.
@@ -98,7 +100,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
                                  annotated_clustered_count_df_cntrl,
                                  c_grid = c(5, 10, 25, 50, 100, 500, 1000),
                                  lambda_grid = c(0, 10, 25, 50, 100),
-                                 count_model = c("nb", "nb_mixture")[1],
+                                 count_model = c("nb", "nb_mixture", "zt_poisson_log_normal")[1],
                                  incorporate_occupancy_info = TRUE,
                                  tail_start = 0.05, ks_tolerance = 1.5,
                                  weight_p_values = TRUE,
@@ -107,8 +109,8 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
   ############
   # CHECK ARGS
   ############
-  if (!all(count_model %in% c("nb", "nb_mixture"))) {
-    stop("`count_model` must be `nb` or `nb_mixture`.")
+  if (!all(count_model %in% c("nb", "nb_mixture", "zt_poisson_log_normal"))) {
+    stop("`count_model` must be `nb`, `nb_mixture`, or `zt_poisson_log_normal`.")
   }
 
   ###########################################################
@@ -134,7 +136,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     message("Cannot fit occupancy model to both treated and control conditions; fixing lambda to `lambda_default`.")
   }
 
-  # fit the robust NB models, iterating over c_grid
+  # fit the count models, iterating over c_grid
   nb_model_fits <- lapply(X = condition_grid, FUN = function(curr_condition) {
     if (verbose) message("Fitting count models for ", curr_condition)
     Y_mat <- Y_mat_list[[curr_condition]]
@@ -142,15 +144,17 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     fits_by_model <- lapply(unique(channel_models), function(model) {
       fit_function <- switch(model,
         nb = fit_multirep_guideseq_count_null,
-        nb_mixture = fit_multirep_guideseq_mixture_count_null)
+        nb_mixture = fit_multirep_guideseq_mixture_count_null,
+        zt_poisson_log_normal = fit_multirep_guideseq_pln_count_null)
       fit_function(Y_mat = Y_mat[channel_models == model, , drop = FALSE], c_grid = c_grid)
     })
-    lapply(as.character(c_grid), function(c) {
+    out <- lapply(as.character(c_grid), function(c) {
       parameter_mats <- lapply(fits_by_model, function(fits) fits[[c]])
       parameters <- dplyr::bind_rows(lapply(parameter_mats, as.data.frame)) |> as.matrix()
       rownames(parameters) <- unlist(lapply(parameter_mats, rownames), use.names = FALSE)
       parameters[rownames(Y_mat), , drop = FALSE]
     }) |> setNames(c_grid)
+    return(out)
   }) |> setNames(condition_grid)
 
   ##############################################################
@@ -278,7 +282,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
 
   # expand p-values to windows and apply homology weighting
   result_list <- lapply(X = condition_grid, FUN = function(condition) {
-    result_df_skinny <- result_dfs[[condition]] |> dplyr::select(window, group_id, homology_alignment_score,
+    result_df_skinny <- result_dfs[[condition]] |> dplyr::select(window, group_id, dplyr::any_of("homology_alignment_score"),
                                                                  if (condition == "trt") "on_target" else NULL)
     incorporate_occupancy_info <- occupancy_fit_list[[condition]]$incorporate_occupancy_info
     results_over_c_lambda <- lapply(X = c_grid, FUN = function(c) {
@@ -315,7 +319,7 @@ tune_hyperparameters <- function(Y_mat_trt, Y_mat_cntrl,
     ests_list <- list(mu_theta_hat_mat = nb_model_fits[[condition]][[selected_c]])
     res_df$lambda <- if (use_occupancy[[condition]]) selected_params$lambda else NA
     metadata_df <- result_dfs[[condition]] |>
-      dplyr::select(-group_id, -homology_alignment_score, -dplyr::any_of("on_target"))
+      dplyr::select(-group_id, -dplyr::any_of(c("homology_alignment_score", "on_target")))
     res_df <- res_df |>
       dplyr::select(-group_id) |>
       dplyr::left_join(metadata_df, by = "window") |>
@@ -388,12 +392,15 @@ get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega, count_
   pmf_list <- lapply(seq_len(nrow(mu_theta_hat_mat)), function(i) {
     curr_row <- mu_theta_hat_mat[i, ]
     if (channel_models[[i]] == "nb") {
+      # NB
       # clamp max_needed to fall between the 1e-16 and 1e-50 quantiles
       quantile_1eminus16 <- qnbinom(p = 1e-16, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
       quantile_1eminus50 <- qnbinom(p = 1e-50, mu = curr_row[["mu"]], size = curr_row[["theta"]], lower.tail = FALSE)
       max_count <- min(max(max_needed, quantile_1eminus16), quantile_1eminus50)
-      dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
-    } else {
+      nb_pmf <- dnbinom(x = seq(0L, max_count), mu = curr_row[["mu"]], size = curr_row[["theta"]])
+      return(nb_pmf)
+    } else if (channel_models[[i]] == "nb_mixture") {
+      # NB mixture
       quantiles_1eminus16_1eminus50 <- sapply(X = c(1e-16, 1e-50), FUN = function(curr_quantile) {
         component_quantiles <- qnbinom(p = curr_quantile,
                                        mu = curr_row[c("mu_lower", "mu_upper")],
@@ -408,6 +415,26 @@ get_right_tail_prob_list <- function(mu_theta_hat_mat, max_needed, Omega, count_
       pi <- curr_row[["pi"]]
       mixture_pmf <- (1 - pi) * lower_pmf + pi * upper_pmf
       return(mixture_pmf)
+    } else if (channel_models[[i]] == "zt_poisson_log_normal") {
+      # zero-truncated Poisson log normal
+      # compute the nonzero probability
+      mu <- curr_row[["mu"]]
+      sig <- curr_row[["sig"]]
+      positive_prob <- 1 - poilog::dpoilog(n = 0, mu = mu, sig = sig)
+      # evaluate pmf up to max needed + 1
+      zt_pmf <- poilog::dpoilog(n = seq(1L, max_needed + 1L), mu = mu, sig = sig)/positive_prob
+      # evaluate the leftover mass (beyond max_needed + 1L)
+      leftover <- integrate(
+        function(z) {
+          ppois(q = max_needed + 1, lambda = exp(mu + sig * z),
+                lower.tail = FALSE) * dnorm(z)
+        }, lower = -Inf, upper = Inf, rel.tol = 1e-8, abs.tol = 0
+      )$value / positive_prob
+      # append the leftover mass to the pmf
+      zt_pmf <- zt_pmf * (1 - leftover) / sum(zt_pmf)
+      zt_pmf <- c(zt_pmf, leftover)
+    } else {
+      stop("`count_model` not recognized.")
     }
   })
 
