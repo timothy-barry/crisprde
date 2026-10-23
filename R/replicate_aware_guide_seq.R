@@ -518,9 +518,9 @@ annotate_clustered_count_df <- function(clustered_count_df, homology_df = NULL, 
           dplyr::mutate(homology_modal_base_cut_distance = pmin(abs(curr_window$modal_base - homology_cut_start),
                                                                 abs(curr_window$modal_base - homology_cut_end))) |>
           dplyr::mutate(homology_alignment_score = compute_alignment_scores(cfds = homology_cfd, distances = homology_modal_base_cut_distance, gamma = gamma))
-        # find the alignment with the best score, tie-breaking by distance
+        # find the best alignment, breaking ties by distance, CFD, then fewer bulges
         best_alignment <- curr_crispritz_candidates |>
-          dplyr::arrange(dplyr::desc(homology_alignment_score), homology_modal_base_cut_distance, dplyr::desc(homology_cfd)) |>
+          dplyr::arrange(dplyr::desc(homology_alignment_score), homology_modal_base_cut_distance, dplyr::desc(homology_cfd), n_bulges) |>
           dplyr::slice(1L) |>
           dplyr::select(bulge_type, gRNA, dna, chromosome, strand, n_mismatches, n_bulges,
                         homology_cut_start, homology_cut_end, homology_cfd, homology_modal_base_cut_distance,
