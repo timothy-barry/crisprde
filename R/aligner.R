@@ -33,8 +33,8 @@ align_spacer_to_genome <- function(grna_spacer, ref_genome = paste0(.get_config_
 
 #' Write a mini reference genome from count-table windows
 #'
-#' Clusters occupied bases, pads each window, and writes one FASTA file per
-#' window. Padded coordinates are clipped to chromosome boundaries and encoded
+#' Clusters occupied bases, pads each window, and writes separate FASTA files
+#' and/or one combined FASTA. Padded coordinates are clipped to chromosome boundaries and encoded
 #' as `chr:start-end` in filenames and sequence headers (1-based, inclusive).
 #' Windows are kept separate even when their padded ranges overlap.
 #'
@@ -42,15 +42,17 @@ align_spacer_to_genome <- function(grna_spacer, ref_genome = paste0(.get_config_
 #' @param reference_fasta Path to an indexed reference FASTA file. Defaults to
 #'   `hg38_main_chroms.fa` in `.get_config_path("REF_GENOME_DIR")`.
 #' @param output_dir Directory for the mini reference genome. Existing `.fa`
-#'   files in this directory are replaced.
+#'   files in this directory are replaced. If `NULL`, per-window files are not written.
 #' @param thresh Maximum distance between occupied bases in the same cluster.
 #' @param padding Number of bases to add on each side of a window.
 #' @param exclude_chr_M Whether to exclude rows whose chromosome is `chrM`.
+#' @param output_file Optional path for a combined multi-record FASTA.
 #'
 #' @returns Invisibly returns `NULL`.
 #' @export
 write_mini_reference_genome <- function(count_df, reference_fasta = file.path(.get_config_path("REF_GENOME_DIR"), "hg38_main_chroms.fa"),
-                                       output_dir, thresh = 100L, padding = 100L, exclude_chr_M = TRUE) {
+                                       output_dir = NULL, thresh = 100L, padding = 100L, exclude_chr_M = TRUE,
+                                       output_file = NULL) {
   if (exclude_chr_M) count_df <- dplyr::filter(count_df, chr != "chrM")
   window_df <- cluster_loci(count_df, thresh = thresh, padding = 0L) |>
     dplyr::distinct(cluster_chr, min_cluster_coord, max_cluster_coord)
@@ -69,11 +71,17 @@ write_mini_reference_genome <- function(count_df, reference_fasta = file.path(.g
   names(window_seq) <- paste0(GenomicRanges::seqnames(windows), ":",
                              GenomicRanges::start(windows), "-", GenomicRanges::end(windows))
 
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  file.remove(list.files(output_dir, pattern = "\\.fa$", full.names = TRUE))
-  for (i in seq_along(window_seq)) {
-    Biostrings::writeXStringSet(window_seq[i],
-                               filepath = file.path(output_dir, paste0(names(window_seq)[i], ".fa")))
+  if (!is.null(output_dir)) {
+    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+    file.remove(list.files(output_dir, pattern = "\\.fa$", full.names = TRUE))
+    for (i in seq_along(window_seq)) {
+      Biostrings::writeXStringSet(window_seq[i],
+                                 filepath = file.path(output_dir, paste0(names(window_seq)[i], ".fa")))
+    }
+  }
+  if (!is.null(output_file)) {
+    dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
+    Biostrings::writeXStringSet(window_seq, filepath = output_file)
   }
   invisible(NULL)
 }

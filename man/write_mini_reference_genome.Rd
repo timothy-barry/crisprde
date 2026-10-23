@@ -7,10 +7,11 @@
 write_mini_reference_genome(
   count_df,
   reference_fasta = file.path(.get_config_path("REF_GENOME_DIR"), "hg38_main_chroms.fa"),
-  output_dir,
+  output_dir = NULL,
   thresh = 100L,
   padding = 100L,
-  exclude_chr_M = TRUE
+  exclude_chr_M = TRUE,
+  output_file = NULL
 )
 }
 \arguments{
@@ -20,20 +21,22 @@ write_mini_reference_genome(
 \code{hg38_main_chroms.fa} in \code{.get_config_path("REF_GENOME_DIR")}.}
 
 \item{output_dir}{Directory for the mini reference genome. Existing \code{.fa}
-files in this directory are replaced.}
+files in this directory are replaced. If \code{NULL}, per-window files are not written.}
 
 \item{thresh}{Maximum distance between occupied bases in the same cluster.}
 
 \item{padding}{Number of bases to add on each side of a window.}
 
 \item{exclude_chr_M}{Whether to exclude rows whose chromosome is \code{chrM}.}
+
+\item{output_file}{Optional path for a combined multi-record FASTA.}
 }
 \value{
 Invisibly returns \code{NULL}.
 }
 \description{
-Clusters occupied bases, pads each window, and writes one FASTA file per
-window. Padded coordinates are clipped to chromosome boundaries and encoded
+Clusters occupied bases, pads each window, and writes separate FASTA files
+and/or one combined FASTA. Padded coordinates are clipped to chromosome boundaries and encoded
 as \code{chr:start-end} in filenames and sequence headers (1-based, inclusive).
 Windows are kept separate even when their padded ranges overlap.
 }
